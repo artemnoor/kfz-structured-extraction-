@@ -1,0 +1,142 @@
+{
+  "benchmark_version": 1,
+  "generated_on": "2026-11-12",
+  "scope": "real local corpus baseline; no source names, paths, hashes or content published",
+  "corpus": {
+    "files_in_source_folder": 26,
+    "unique_source_documents": 22,
+    "byte_identical_duplicate_copies": 1,
+    "reference_files": 3,
+    "documents_by_type": {
+      "act": 6,
+      "certificate": 1,
+      "contribution_register": 5,
+      "invoice": 1,
+      "kfz_report": 1,
+      "memo": 1,
+      "payroll_register": 5,
+      "upd": 2
+    }
+  },
+  "document_parser": {
+    "repository_commit": "4c2fd27ae6f7ebd0a9a9f9c052099c12b56f5e84",
+    "docling_version": "2.72.0",
+    "benchmark_documents": 22,
+    "ready": 22,
+    "errors": 0,
+    "mean_seconds": 2.974,
+    "ocr_enabled_documents": 5,
+    "ocr": "local RapidOCR 3.6.0 with Cyrillic PP-OCRv5 recognition; external Polza OCR disabled",
+    "warning_count": 7,
+    "parser_adapter_cells": 410
+  },
+  "structured_extraction": {
+    "rules_only_processed": 22,
+    "errors": 0,
+    "llm_assisted_processed": 0,
+    "compare_processed": 0,
+    "external_llm_calls_on_corpus": 0,
+    "classification": {
+      "scored_documents": 8,
+      "correct": 4,
+      "accuracy": 0.5,
+      "precision_micro": 0.5,
+      "recall_micro": 0.5,
+      "f1_micro": 0.5,
+      "macro_f1": 0.26666666666666666,
+      "weighted_f1": 0.6000000000000001,
+      "per_class": {
+        "kfz_report": {
+          "support": 1,
+          "true_positive": 0,
+          "false_positive": 0,
+          "false_negative": 1,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        "invoice": {
+          "support": 1,
+          "true_positive": 0,
+          "false_positive": 0,
+          "false_negative": 1,
+          "precision": 0,
+          "recall": 0,
+          "f1": 0
+        },
+        "act": {
+          "support": 6,
+          "true_positive": 4,
+          "false_positive": 0,
+          "false_negative": 2,
+          "precision": 1,
+          "recall": 0.6666666666666666,
+          "f1": 0.8
+        }
+      },
+      "unsupported_documents": 14,
+      "scored_unknown_review": 4,
+      "ground_truth_basis": "source file name/title metadata; classifier also receives filename, so this is not a blind evaluation"
+    },
+    "fields": {
+      "precision": null,
+      "recall": null,
+      "f1": null,
+      "exact_match_accuracy": null,
+      "scored_values": 0,
+      "status": "not_scored_except_KFZ_target_row",
+      "reason": "Complete independent field annotations were not created for the remaining documents."
+    },
+    "kfz_target_row": {
+      "document_id": "DOC-001",
+      "ground_truth_numeric_cells": 15,
+      "exact_value_matches": 0,
+      "cell_recall": 0,
+      "cell_precision": null,
+      "cell_f1": null,
+      "exact_match_accuracy": 0,
+      "row_candidates": 18,
+      "target_rows": 1,
+      "matched_rows": 0,
+      "row_precision": 0,
+      "row_recall": 0,
+      "row_f1": 0,
+      "rows_with_all_mapped_values_missing": 18,
+      "source_table_rows": 9,
+      "adapter_rows": 18,
+      "table_row_duplication_factor": 2,
+      "manual_annotation": "one target row, 15 numeric cells, visually checked against source and cross-checked against independent answer workbook where values overlap"
+    },
+    "provenance": {
+      "accepted_extracted_values": 43,
+      "with_source_part_id": 43,
+      "source_id_resolves_to_adapter_element": 43,
+      "source_available_not_false": 43,
+      "with_locator": 43,
+      "nonempty_source_text": 43,
+      "raw_value_present_in_source_text": 43,
+      "grounding_consistency_precision": 1,
+      "recall": null,
+      "status": "lexical grounding consistency only; this is not semantic correctness or hallucination rate"
+    },
+    "hallucination_rate": {
+      "value": null,
+      "status": "not_scored",
+      "reason": "No full field-level independent adjudication; lexical source consistency alone cannot measure hallucinations."
+    },
+    "comparison": {
+      "corpus_compare": "not_run_privacy_guard",
+      "synthetic_demo_compare": "PASS",
+      "synthetic_demo_polza_completions": 1,
+      "models_get_calls": 1,
+      "d1_save_and_readback": "PASS"
+    }
+  },
+  "checks": {
+    "document_parser_unit": "PASS 77/77",
+    "structured_extraction_unit": "PASS 40/40",
+    "api_smoke": "PASS",
+    "real_polza_smoke": "PASS (synthetic demo only)",
+    "production_build": "PASS"
+  }
+}
