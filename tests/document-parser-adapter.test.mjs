@@ -218,7 +218,7 @@ test("grounded table mappings can map an unfamiliar native XLSX header and prese
   const context = buildGroundedContext(parsed);
   const headers = context.tables.find((item) => item.table_id === table.id).headers;
   const mockResponse = {
-    document_type: "registry",
+    document_type: "payroll_register",
     classification_confidence: 0.91,
     field_candidates: [],
     table_mappings: [{
@@ -235,7 +235,7 @@ test("grounded table mappings can map an unfamiliar native XLSX header and prese
   };
   const llm = await callPolzaForExtraction(parsed, { POLZA_API_KEY: "unit-test-key", POLZA_FETCH: async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(mockResponse) } }] }), { status: 200 }) });
   const result = extractStructuredDocument(parsed, { extractionId: "native-xlsx-test", llm });
-  assert.equal(result.document_type, "registry");
+  assert.equal(result.document_type, "payroll_register");
   assert.equal(result.line_items.length, 3);
   assert.equal(result.line_items[0].identifier.source_value, "0201");
   assert.equal(result.line_items[0].description.source_value, "Основная заработная плата");

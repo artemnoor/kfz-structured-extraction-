@@ -21,7 +21,7 @@ type ExtractedValue = { label?: string; value: any; source_value: string | null;
 type ParserTable = { id: string; caption: string; role: string; headers: string[]; page_no?: number | null; rows: Array<{ row_id: string; page_no?: number | null; sheet_name?: string | null; cells: Array<{ id?: string; column: number; text: string; address?: string; bbox?: Provenance["bbox"]; provenance?: Provenance | null }> }> };
 type DocumentData = { id: string; title: string; file_name: string; format: string; is_demo: boolean; is_synthetic?: boolean; input_version: number; parser_json: any; parser_view?: any; latest_extraction: any; extraction_version: number; latest_run_status?: string | null; latest_run_error?: any };
 
-const typeLabels: Record<string, string> = { kfz_report: "Отчёт КФЗ", contract: "Договор", act: "Акт", invoice: "Счёт", addendum: "Доп. соглашение", registry: "Реестр" };
+const typeLabels: Record<string, string> = { kfz_report: "Отчёт КФЗ", contract: "Договор", act: "Акт", invoice: "Счёт", invoice_act: "Счёт-акт", upd: "УПД", payroll_register: "Ведомость заработной платы", contribution_register: "Ведомость страховых взносов", service_memo: "Служебная записка", certificate: "Справка", addendum: "Доп. соглашение", registry: "Реестр" };
 const demoTypes: Record<string, string> = { "kfz-2026-q1": "kfz_report", "contract-2026-0315": "contract", "act-2026-0424": "act", "invoice-2026-0408": "invoice", "addendum-2026-04": "addendum", "registry-2026-04": "registry" };
 const demoOrder = ["kfz-2026-q1", "contract-2026-0315", "act-2026-0424", "invoice-2026-0408", "addendum-2026-04", "registry-2026-04"];
 const unitLabels: Record<string, string> = { piece: "шт.", set: "компл.", person_hour: "чел.-ч", cubic_meter: "м³", meter: "м", kilogram: "кг", tonne: "т", object: "объект", point: "точка", shift: "смена", trip: "рейс", line: "линия" };
@@ -148,7 +148,7 @@ export default function Home() {
     const q = search.trim().toLocaleLowerCase("ru-RU");
     return documents.filter((document) => {
       const type = document.latest_extraction?.document_type ?? demoTypes[document.id];
-      const matchesFilter = filter === "Все" || (filter === "КФЗ" && type === "kfz_report") || (filter === "Договоры" && ["contract", "addendum"].includes(type ?? "")) || (filter === "Первичка" && ["act", "invoice", "registry"].includes(type ?? ""));
+      const matchesFilter = filter === "Все" || (filter === "КФЗ" && type === "kfz_report") || (filter === "Договоры" && ["contract", "addendum"].includes(type ?? "")) || (filter === "Первичка" && ["act", "invoice", "invoice_act", "upd", "registry", "payroll_register", "contribution_register", "service_memo", "certificate"].includes(type ?? ""));
       return matchesFilter && (!q || `${document.title} ${document.file_name} ${typeLabels[type ?? ""] ?? ""}`.toLocaleLowerCase("ru-RU").includes(q));
     });
   }, [documents, filter, search]);

@@ -1,0 +1,287 @@
+{
+  "evaluation_status": "exploratory_class_labels_not_independent_blind_annotations",
+  "documents": [
+    {
+      "document_id": "DOC-001",
+      "actual_type": "kfz_report",
+      "classification_status": "classified",
+      "label_agreement": true,
+      "table_count": 1,
+      "adapted_rows": 4,
+      "extracted_rows": 4,
+      "row_status_counts": {
+        "extracted": 1,
+        "review": 3
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-002",
+      "actual_type": "payroll_register",
+      "classification_status": "classified",
+      "label_agreement": true,
+      "table_count": 1,
+      "adapted_rows": 3,
+      "extracted_rows": 3,
+      "row_status_counts": {
+        "extracted": 2,
+        "review": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-003",
+      "actual_type": "payroll_register",
+      "classification_status": "classified",
+      "label_agreement": true,
+      "table_count": 1,
+      "adapted_rows": 3,
+      "extracted_rows": 3,
+      "row_status_counts": {
+        "extracted": 2,
+        "review": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-004",
+      "actual_type": "payroll_register",
+      "classification_status": "classified",
+      "label_agreement": true,
+      "table_count": 1,
+      "adapted_rows": 3,
+      "extracted_rows": 3,
+      "row_status_counts": {
+        "extracted": 2,
+        "review": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-005",
+      "actual_type": "payroll_register",
+      "classification_status": "classified",
+      "label_agreement": true,
+      "table_count": 1,
+      "adapted_rows": 3,
+      "extracted_rows": 3,
+      "row_status_counts": {
+        "extracted": 2,
+        "review": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-006",
+      "actual_type": "payroll_register",
+      "classification_status": "classified",
+      "label_agreement": true,
+      "table_count": 1,
+      "adapted_rows": 3,
+      "extracted_rows": 3,
+      "row_status_counts": {
+        "extracted": 2,
+        "review": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-007",
+      "actual_type": "contribution_register",
+      "classification_status": "classified",
+      "label_agreement": true,
+      "table_count": 1,
+      "adapted_rows": 1,
+      "extracted_rows": 1,
+      "row_status_counts": {
+        "extracted": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-008",
+      "actual_type": "contribution_register",
+      "classification_status": "classified",
+      "label_agreement": true,
+      "table_count": 1,
+      "adapted_rows": 1,
+      "extracted_rows": 1,
+      "row_status_counts": {
+        "extracted": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-009",
+      "actual_type": "contribution_register",
+      "classification_status": "classified",
+      "label_agreement": true,
+      "table_count": 1,
+      "adapted_rows": 1,
+      "extracted_rows": 1,
+      "row_status_counts": {
+        "extracted": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-010",
+      "actual_type": "contribution_register",
+      "classification_status": "classified",
+      "label_agreement": true,
+      "table_count": 1,
+      "adapted_rows": 1,
+      "extracted_rows": 1,
+      "row_status_counts": {
+        "extracted": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-011",
+      "actual_type": "contribution_register",
+      "classification_status": "classified",
+      "label_agreement": true,
+      "table_count": 1,
+      "adapted_rows": 1,
+      "extracted_rows": 1,
+      "row_status_counts": {
+        "extracted": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-012",
+      "actual_type": "act",
+      "classification_status": "review",
+      "label_agreement": true,
+      "table_count": 0,
+      "adapted_rows": 0,
+      "extracted_rows": 0,
+      "row_status_counts": {},
+      "error": null
+    },
+    {
+      "document_id": "DOC-013",
+      "actual_type": "invoice_act",
+      "classification_status": "classified",
+      "label_agreement": true,
+      "table_count": 1,
+      "adapted_rows": 3,
+      "extracted_rows": 3,
+      "row_status_counts": {
+        "review": 3
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-014",
+      "actual_type": "service_memo",
+      "classification_status": "classified",
+      "label_agreement": true,
+      "table_count": 1,
+      "adapted_rows": 1,
+      "extracted_rows": 1,
+      "row_status_counts": {
+        "extracted": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-015",
+      "actual_type": "upd",
+      "classification_status": "classified",
+      "label_agreement": true,
+      "table_count": 1,
+      "adapted_rows": 3,
+      "extracted_rows": 3,
+      "row_status_counts": {
+        "review": 3
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-016",
+      "actual_type": "act",
+      "classification_status": "review",
+      "label_agreement": true,
+      "table_count": 0,
+      "adapted_rows": 0,
+      "extracted_rows": 0,
+      "row_status_counts": {},
+      "error": null
+    },
+    {
+      "document_id": "DOC-017",
+      "actual_type": "act",
+      "classification_status": "classified",
+      "label_agreement": true,
+      "table_count": 1,
+      "adapted_rows": 2,
+      "extracted_rows": 2,
+      "row_status_counts": {
+        "review": 2
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-018",
+      "actual_type": "certificate",
+      "classification_status": "review",
+      "label_agreement": true,
+      "table_count": 1,
+      "adapted_rows": 1,
+      "extracted_rows": 1,
+      "row_status_counts": {
+        "extracted": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-019",
+      "actual_type": "act",
+      "classification_status": "review",
+      "label_agreement": true,
+      "table_count": 0,
+      "adapted_rows": 0,
+      "extracted_rows": 0,
+      "row_status_counts": {},
+      "error": null
+    },
+    {
+      "document_id": "DOC-020",
+      "actual_type": "upd",
+      "classification_status": "classified",
+      "label_agreement": true,
+      "table_count": 0,
+      "adapted_rows": 0,
+      "extracted_rows": 0,
+      "row_status_counts": {},
+      "error": null
+    },
+    {
+      "document_id": "DOC-021",
+      "actual_type": "act",
+      "classification_status": "classified",
+      "label_agreement": true,
+      "table_count": 1,
+      "adapted_rows": 2,
+      "extracted_rows": 2,
+      "row_status_counts": {
+        "review": 2
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-022",
+      "actual_type": "act",
+      "classification_status": "review",
+      "label_agreement": true,
+      "table_count": 0,
+      "adapted_rows": 0,
+      "extracted_rows": 0,
+      "row_status_counts": {},
+      "error": null
+    }
+  ]
+}

@@ -1,0 +1,414 @@
+{
+  "benchmark_version": 2,
+  "generated_on": "2026-11-12",
+  "scope": "fresh local Document Parser + Rules Only on 22 primary source documents; raw documents and values withheld; no corpus documents sent to Polza",
+  "ground_truth": "One KFS target row (15 numeric cells) was manually visually checked and cross-checked against a separate supplied answer workbook. Document class labels for the full corpus are exploratory only and derive from the corpus index; formal classification metrics are not scored.",
+  "document_parser": {
+    "documents": 22,
+    "ready": 22,
+    "errors": 0,
+    "ocr_documents": 5,
+    "source_cache_reused": false
+  },
+  "structured_extraction": {
+    "rules_only_processed": 22,
+    "errors": 0,
+    "llm_assisted_corpus_documents": 0,
+    "compare_corpus_documents": 0,
+    "external_llm_calls_on_corpus": 0,
+    "classification": {
+      "support": 22,
+      "correct": null,
+      "accuracy": null,
+      "precision_micro": null,
+      "recall_micro": null,
+      "f1_micro": null,
+      "macro_f1": null,
+      "weighted_f1": null,
+      "ground_truth_basis": "Exploratory class labels taken from corpus index/source naming; not independently adjudicated blind expert annotations. Classifier input excludes filename/title.",
+      "status": "not_scored_independent_blind_adjudication_missing",
+      "exploratory_label_agreement": {
+        "matches": 22,
+        "labeled_documents": 22,
+        "rate": 1,
+        "ground_truth_basis": "exploratory type labels from the corpus index and source file naming; not independent blind expert annotation"
+      }
+    },
+    "fields": {
+      "precision": null,
+      "recall": null,
+      "f1": null,
+      "exact_match_accuracy": null,
+      "status": "not_scored",
+      "reason": "No independent field-level annotation exists for the full corpus."
+    },
+    "tables": {
+      "row_precision": null,
+      "row_recall": null,
+      "row_f1": null,
+      "status": "not_scored_except_one_KFS_target_row"
+    },
+    "kfz_target_row": {
+      "document_id": "DOC-001",
+      "ground_truth_numeric_cells": 15,
+      "exact_value_matches": 15,
+      "cell_precision": 1,
+      "cell_recall": 1,
+      "cell_f1": 1,
+      "exact_match_accuracy": 1,
+      "target_rows": 1,
+      "target_row_found": true,
+      "matched_rows": 1,
+      "row_precision": 1,
+      "row_recall": 1,
+      "row_f1": 1,
+      "row_status": "review",
+      "grounded_values": 15,
+      "table_source_rows": 9,
+      "adapter_body_rows": 4,
+      "adapter_columns": 17
+    },
+    "provenance": {
+      "accepted_extracted_values": 161,
+      "grounded_values": 161,
+      "grounding_rate": 1,
+      "kfz_target_values_with_page_bbox_source_ref": 15,
+      "kfz_target_values_without_confirmable_source": 0,
+      "status": "Lexical source check plus resolved provenance; semantic accuracy is not inferred from this rate."
+    },
+    "real_llm": {
+      "provider": "polza_ai",
+      "model": "deepseek/deepseek-v4-flash",
+      "successful_real_completions": 1,
+      "synthetic_document_id": "kfz-2026-q1",
+      "successful_mode": "compare",
+      "models_endpoint": "PASS",
+      "response_validation": "PASS",
+      "saved_to_local_d1_and_read_back": "PASS",
+      "latency_ms": 17480,
+      "usage_tokens": {
+        "prompt": 11262,
+        "completion": 1491,
+        "total": 12753
+      },
+      "compare_counts": {
+        "matches": 27,
+        "discrepancies": 2,
+        "rules_only": 0,
+        "llm_only": 1
+      },
+      "standalone_llm_assisted_mode": {
+        "successful_completion": 0,
+        "status": "blocked_before_provider_by_local_demo_daily_limit",
+        "http_status": 429
+      },
+      "corpus_documents_sent": 0
+    }
+  },
+  "document_results": [
+    {
+      "document_id": "DOC-001",
+      "expected_type": "kfz_report",
+      "actual_type": "kfz_report",
+      "classification_status": "classified",
+      "correct": true,
+      "table_count": 1,
+      "adapted_rows": 4,
+      "extracted_rows": 4,
+      "row_status_counts": {
+        "extracted": 1,
+        "review": 3
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-002",
+      "expected_type": "payroll_register",
+      "actual_type": "payroll_register",
+      "classification_status": "classified",
+      "correct": true,
+      "table_count": 1,
+      "adapted_rows": 3,
+      "extracted_rows": 3,
+      "row_status_counts": {
+        "extracted": 2,
+        "review": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-003",
+      "expected_type": "payroll_register",
+      "actual_type": "payroll_register",
+      "classification_status": "classified",
+      "correct": true,
+      "table_count": 1,
+      "adapted_rows": 3,
+      "extracted_rows": 3,
+      "row_status_counts": {
+        "extracted": 2,
+        "review": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-004",
+      "expected_type": "payroll_register",
+      "actual_type": "payroll_register",
+      "classification_status": "classified",
+      "correct": true,
+      "table_count": 1,
+      "adapted_rows": 3,
+      "extracted_rows": 3,
+      "row_status_counts": {
+        "extracted": 2,
+        "review": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-005",
+      "expected_type": "payroll_register",
+      "actual_type": "payroll_register",
+      "classification_status": "classified",
+      "correct": true,
+      "table_count": 1,
+      "adapted_rows": 3,
+      "extracted_rows": 3,
+      "row_status_counts": {
+        "extracted": 2,
+        "review": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-006",
+      "expected_type": "payroll_register",
+      "actual_type": "payroll_register",
+      "classification_status": "classified",
+      "correct": true,
+      "table_count": 1,
+      "adapted_rows": 3,
+      "extracted_rows": 3,
+      "row_status_counts": {
+        "extracted": 2,
+        "review": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-007",
+      "expected_type": "contribution_register",
+      "actual_type": "contribution_register",
+      "classification_status": "classified",
+      "correct": true,
+      "table_count": 1,
+      "adapted_rows": 1,
+      "extracted_rows": 1,
+      "row_status_counts": {
+        "extracted": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-008",
+      "expected_type": "contribution_register",
+      "actual_type": "contribution_register",
+      "classification_status": "classified",
+      "correct": true,
+      "table_count": 1,
+      "adapted_rows": 1,
+      "extracted_rows": 1,
+      "row_status_counts": {
+        "extracted": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-009",
+      "expected_type": "contribution_register",
+      "actual_type": "contribution_register",
+      "classification_status": "classified",
+      "correct": true,
+      "table_count": 1,
+      "adapted_rows": 1,
+      "extracted_rows": 1,
+      "row_status_counts": {
+        "extracted": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-010",
+      "expected_type": "contribution_register",
+      "actual_type": "contribution_register",
+      "classification_status": "classified",
+      "correct": true,
+      "table_count": 1,
+      "adapted_rows": 1,
+      "extracted_rows": 1,
+      "row_status_counts": {
+        "extracted": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-011",
+      "expected_type": "contribution_register",
+      "actual_type": "contribution_register",
+      "classification_status": "classified",
+      "correct": true,
+      "table_count": 1,
+      "adapted_rows": 1,
+      "extracted_rows": 1,
+      "row_status_counts": {
+        "extracted": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-012",
+      "expected_type": "act",
+      "actual_type": "act",
+      "classification_status": "review",
+      "correct": true,
+      "table_count": 0,
+      "adapted_rows": 0,
+      "extracted_rows": 0,
+      "row_status_counts": {},
+      "error": null
+    },
+    {
+      "document_id": "DOC-013",
+      "expected_type": "invoice_act",
+      "actual_type": "invoice_act",
+      "classification_status": "classified",
+      "correct": true,
+      "table_count": 1,
+      "adapted_rows": 3,
+      "extracted_rows": 3,
+      "row_status_counts": {
+        "review": 3
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-014",
+      "expected_type": "service_memo",
+      "actual_type": "service_memo",
+      "classification_status": "classified",
+      "correct": true,
+      "table_count": 1,
+      "adapted_rows": 1,
+      "extracted_rows": 1,
+      "row_status_counts": {
+        "extracted": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-015",
+      "expected_type": "upd",
+      "actual_type": "upd",
+      "classification_status": "classified",
+      "correct": true,
+      "table_count": 1,
+      "adapted_rows": 3,
+      "extracted_rows": 3,
+      "row_status_counts": {
+        "review": 3
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-016",
+      "expected_type": "act",
+      "actual_type": "act",
+      "classification_status": "review",
+      "correct": true,
+      "table_count": 0,
+      "adapted_rows": 0,
+      "extracted_rows": 0,
+      "row_status_counts": {},
+      "error": null
+    },
+    {
+      "document_id": "DOC-017",
+      "expected_type": "act",
+      "actual_type": "act",
+      "classification_status": "classified",
+      "correct": true,
+      "table_count": 1,
+      "adapted_rows": 2,
+      "extracted_rows": 2,
+      "row_status_counts": {
+        "review": 2
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-018",
+      "expected_type": "certificate",
+      "actual_type": "certificate",
+      "classification_status": "review",
+      "correct": true,
+      "table_count": 1,
+      "adapted_rows": 1,
+      "extracted_rows": 1,
+      "row_status_counts": {
+        "extracted": 1
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-019",
+      "expected_type": "act",
+      "actual_type": "act",
+      "classification_status": "review",
+      "correct": true,
+      "table_count": 0,
+      "adapted_rows": 0,
+      "extracted_rows": 0,
+      "row_status_counts": {},
+      "error": null
+    },
+    {
+      "document_id": "DOC-020",
+      "expected_type": "upd",
+      "actual_type": "upd",
+      "classification_status": "classified",
+      "correct": true,
+      "table_count": 0,
+      "adapted_rows": 0,
+      "extracted_rows": 0,
+      "row_status_counts": {},
+      "error": null
+    },
+    {
+      "document_id": "DOC-021",
+      "expected_type": "act",
+      "actual_type": "act",
+      "classification_status": "classified",
+      "correct": true,
+      "table_count": 1,
+      "adapted_rows": 2,
+      "extracted_rows": 2,
+      "row_status_counts": {
+        "review": 2
+      },
+      "error": null
+    },
+    {
+      "document_id": "DOC-022",
+      "expected_type": "act",
+      "actual_type": "act",
+      "classification_status": "review",
+      "correct": true,
+      "table_count": 0,
+      "adapted_rows": 0,
+      "extracted_rows": 0,
+      "row_status_counts": {},
+      "error": null
+    }
+  ]
+}

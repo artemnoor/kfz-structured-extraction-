@@ -43,7 +43,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!mode) return Response.json({ error: "Режим должен быть rules_only, llm_assisted или compare" }, { status: 400 });
     activeMode = mode;
     const usesLlm = mode !== "rules_only";
-    if (usesLlm && !mayRunLlm({ isDemo: document.is_demo, isSynthetic: document.is_synthetic })) {
+    if (usesLlm && !mayRunLlm({ id: document.id, isDemo: document.is_demo, isSynthetic: document.is_synthetic }, env.POLZA_LLM_DOCUMENT_ALLOWLIST)) {
       return Response.json({ error: "LLM разрешена только для демо и импортированных данных, явно отмеченных как синтетические или обезличенные", code: "LLM_SYNTHETIC_ONLY" }, { status: 403 });
     }
     db = getDb();

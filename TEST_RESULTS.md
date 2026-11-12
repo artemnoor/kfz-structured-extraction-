@@ -44,3 +44,24 @@ Baseline выполнен на коде Structured Extraction `1e922e284805f2c1b
 | Production build | PASS | `npm run build`; есть предупреждения зависимостей и статического анализа Vinext. |
 
 Подробности, метрики и границы разметки: [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md). Публичные JSON результаты обезличены; полный parser JSON, документы и эталонные значения остались в локальном исключённом каталоге.
+
+## Повторная проверка после исправлений — 2026-11-13
+
+Ветка: `fix/structured-extraction-real-docs`. Проверки проводились в Windows, на локальном Worker и локальной D1.
+
+| Проверка | Результат | Примечания |
+|---|---|---|
+| `npm test` | PASS — 44/44 | Включены регрессии таблиц и фрагментов Parser, 15 ячеек КФЗ, неполных строк, классификации без имени файла и явного LLM allowlist. |
+| Свежий Document Parser на корпусе | PASS — 22/22 | Исходные документы обработаны заново; 5 с локальным OCR; сохранённые Parser JSON не использовались. |
+| Rules Only на корпусе | PASS — 22/22 | Ошибок извлечения нет. Полевые метрики всего корпуса — `not_scored`. |
+| Строка КФЗ | PASS — 15/15 контрольных значений | Совпали с отдельной ручной разметкой; все значения имеют исходный текст, page 1, bbox и source ref. Строка остаётся `review` из-за пустого дополнительного поля. |
+| Формальная классификационная accuracy | NOT SCORED | Все 22 вывода совпали с исследовательскими метками индекса корпуса; метки не являются слепой независимой экспертной разметкой. |
+| `npm run test:api` | PASS | API, локальная D1, local sign-in, spoofed-header rejection, rules-only rerun, history readback и anonymous write denial. |
+| Реальный `GET /models` и Compare | PASS — 1 completion | `deepseek/deepseek-v4-flash`, ответ реально получен, проверен и сохранён/прочитан из локальной D1. Compare: 27 matches, 2 discrepancies, 1 llm-only. |
+| Отдельный API режим `llm_assisted` | BLOCKED — HTTP 429 | Локальная дневная demo-квота закончилась до обращения к провайдеру. Лимит не обходился; успешный inference этому запуску не приписан. |
+| `npm run test:polza` после расширения до двух режимов | FAIL — дневной лимит | Предыдущий одно-вызовный Compare smoke завершился PASS; следующая попытка отдельного режима `llm_assisted` была отклонена локальной квотой до inference. |
+| `npm run db:migrate:local` | PASS | Локальная база, миграций к применению нет; production D1 не затрагивалась. |
+| `npm run build` | PASS | Production build завершён; остаётся предупреждение Vinext о статическом определении dynamic API routes. |
+| Проверка браузером | PASS | Локальная главная страница открылась, title `КФЗ · Structured Extraction`, список demo-документов и экран извлечения отрендерились. |
+
+Детали повторного benchmark и ограничения: [BENCHMARK_REPORT_AFTER_FIXES.md](BENCHMARK_REPORT_AFTER_FIXES.md). Обезличенные machine-readable результаты: [summary.json](benchmarks/results/after-fixes/summary.json) и [per-document.json](benchmarks/results/after-fixes/per-document.json). Корпусные документы не отправлялись Polza.

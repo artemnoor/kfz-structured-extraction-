@@ -10,15 +10,17 @@ async function signedJwt(header, claims, secret) {
   return `${unsigned}.${b64url(new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(unsigned))))}`;
 }
 
-test("document visibility and synthetic-only LLM policy are owner scoped", () => {
+test("document visibility and explicit LLM allowlist are owner scoped", () => {
   const demo = { isDemo: true, isSynthetic: true, ownerId: null };
-  const privateDoc = { isDemo: false, isSynthetic: true, ownerId: "user-a" };
+  const privateDoc = { id: "approved-synthetic-1", isDemo: false, isSynthetic: true, ownerId: "user-a" };
   assert.equal(mayReadDocument(demo, null), true);
   assert.equal(mayReadDocument(privateDoc, null), false);
   assert.equal(mayReadDocument(privateDoc, "user-b"), false);
   assert.equal(mayReadDocument(privateDoc, "user-a"), true);
   assert.equal(mayRunLlm(demo), true);
-  assert.equal(mayRunLlm(privateDoc), true);
+  assert.equal(mayRunLlm(privateDoc), false);
+  assert.equal(mayRunLlm(privateDoc, "other-doc, approved-synthetic-1"), true);
+  assert.equal(mayRunLlm({ ...privateDoc, isSynthetic: false }, "approved-synthetic-1"), false);
   assert.equal(mayRunLlm({ isDemo: false, isSynthetic: false }), false);
 });
 
