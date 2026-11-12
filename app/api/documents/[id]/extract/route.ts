@@ -2,8 +2,11 @@ import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { documents, extractionRuns } from "@/db/schema";
 import { ensureDemoDocuments, getDocument } from "@/lib/storage";
+import { env } from "cloudflare:workers";
 // @ts-ignore Cloudflare Worker appends the .mjs module to the server bundle.
 import { extractStructuredDocument } from "@/lib/extraction/structured-extraction.mjs";
+// @ts-ignore Cloudflare Worker appends the .mjs module to the server bundle.
+import { callWorkersAiForExtraction, WorkersAiError } from "@/lib/extraction/workers-ai.mjs";
 
 export async function POST(_request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -11,7 +14,8 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
     const { id } = await context.params;
     const document = await getDocument(id);
     if (!document) return Response.json({ error: "Документ не найден" }, { status: 404 });
-    const result = extractStructuredDocument(document.parser_json, { version: document.extraction_version + 1 });
+    const llm = await callWorkersAiForExtraction(document.parser_json, env);
+    const result = extractStructuredDocument(document.parser_json, { version: document.extraction_version + 1, llm });
     const db = getDb();
     await db.insert(extractionRuns).values({
       id: result.extraction_id,
@@ -25,6 +29,8 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
     return Response.json({ extraction: result, stored: true }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Structured Extraction завершился ошибкой";
-    return Response.json({ error: message }, { status: 422 });
+    const status = error instanceof WorkersAiError ? error.status : 422;
+    const code = error instanceof WorkersAiError ? error.code : "EXTRACTION_FAILED";
+    return Response.json({ error: message, code }, { status });
   }
 }

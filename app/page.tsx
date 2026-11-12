@@ -19,7 +19,7 @@ type Provenance = {
 };
 type ExtractedValue = { label?: string; value: any; source_value: string | null; status: "extracted" | "review" | "missing"; confidence: number | null; provenance: Provenance | null; normalization_note?: string | null };
 type ParserTable = { id: string; caption: string; role: string; headers: string[]; rows: Array<{ row_id: string; page_no?: number | null; sheet_name?: string | null; cells: Array<{ id?: string; column: number; text: string; address?: string; bbox?: any; provenance?: any }> }> };
-type DocumentData = { id: string; title: string; file_name: string; format: string; is_demo: boolean; parser_json: any; latest_extraction: any; extraction_version: number };
+type DocumentData = { id: string; title: string; file_name: string; format: string; is_demo: boolean; parser_json: any; parser_view?: any; latest_extraction: any; extraction_version: number };
 
 const typeLabels: Record<string, string> = { kfz_report: "Отчёт КФЗ", contract: "Договор", act: "Акт", invoice: "Счёт", addendum: "Доп. соглашение", registry: "Реестр" };
 const demoTypes: Record<string, string> = { "kfz-2026-q1": "kfz_report", "contract-2026-0315": "contract", "act-2026-0424": "act", "invoice-2026-0408": "invoice", "addendum-2026-04": "addendum", "registry-2026-04": "registry" };
@@ -120,7 +120,7 @@ export default function Home() {
       setActiveDocument(data.document);
       setCitation(null);
       setCurrentPage(1);
-      setCurrentSheet(data.document.parser_json?.workbook?.active_sheet ?? "Реестр");
+      setCurrentSheet(data.document.parser_json?.workbook?.active_sheet ?? data.document.parser_view?.sheet_names?.[0] ?? "Реестр");
       setActiveTab("result");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Ошибка открытия документа");
@@ -139,11 +139,21 @@ export default function Home() {
   }, [documents, filter, search]);
 
   const parserJson = activeDocument?.parser_json;
+  const rawParserJson = parserJson?.analysis_json ?? parserJson?.analysis ?? parserJson;
+  const parserView = activeDocument?.parser_view;
   const extraction = activeDocument?.latest_extraction;
   const resultRows = extraction?.line_items ?? extraction?.payment_schedule ?? extraction?.changes ?? [];
-  const sourceTables: ParserTable[] = parserJson?.logical_tables ?? [];
-  const pageCount = Number(parserJson?.page_count ?? 1);
-  const sheetNames: string[] = parserJson?.workbook?.sheet_names ?? Object.keys(parserJson?.visual_layout?.sheets ?? {});
+  const sourceTables: ParserTable[] = parserView?.tables ?? rawParserJson?.logical_tables ?? [];
+  const pageCount = Number(parserView?.page_count ?? rawParserJson?.page_count ?? 1);
+  const sheetNames: string[] = parserView?.sheet_names ?? rawParserJson?.workbook?.sheet_names ?? Object.keys(rawParserJson?.visual_layout?.sheets ?? {});
+  const sourceElements: any[] = parserView?.elements ?? [];
+  const sourceIsWorkbook = activeDocument?.format === "XLSX";
+  const sourceHasPageNavigation = !sourceIsWorkbook && (activeDocument?.format === "PDF" || activeDocument?.format === "PPTX" || sourceElements.some((element) => Number.isFinite(element.provenance?.page_no)) || sourceTables.some((table) => Number.isFinite(table.page_no)));
+  const sourceRowsForTable = (table: ParserTable) => table.rows.filter((row) => sourceIsWorkbook ? row.sheet_name === currentSheet : sourceHasPageNavigation ? row.page_no === currentPage || row.page_no == null && (table as any).page_no === currentPage : true);
+  const sourceTableIsVisible = (table: ParserTable) => sourceRowsForTable(table).length > 0;
+  const sourcePage = parserView?.page_sizes?.[String(currentPage)] ?? parserView?.page_sizes?.[currentPage] ?? {};
+  const sourcePageSize = sourcePage.size ?? sourcePage.unrotated_size ?? sourcePage;
+  const sourcePageSizeLabel = sourcePageSize.width && sourcePageSize.height ? `${Math.round(sourcePageSize.width)} × ${Math.round(sourcePageSize.height)} pt` : "Размер не указан";
 
   const runExtraction = async () => {
     if (!selectedId) return;
@@ -165,17 +175,20 @@ export default function Home() {
     }
   };
 
-  const uploadParserJson = async (file?: File) => {
-    if (!file) return;
+  const uploadParserJson = async (files?: FileList | File[]) => {
+    const selectedFiles = files ? Array.from(files) : [];
+    if (!selectedFiles.length) return;
     setBusy(true);
     setError("");
     try {
-      const parsed = JSON.parse(await file.text());
-      const response = await fetch("/api/parser-json", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ parser_json: parsed, file_name: file.name }) });
+      const parsedFiles = await Promise.all(selectedFiles.map(async (file) => ({ file, json: JSON.parse(await file.text()) })));
+      const layoutItem = parsedFiles.find(({ json }) => json && typeof json === "object" && !json.document && !json.model_parts && json.pages && json.source && Array.isArray(json.parts));
+      const parserItem = parsedFiles.find((item) => item !== layoutItem) ?? parsedFiles[0];
+      const response = await fetch("/api/parser-json", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ parser_json: parserItem.json, ...(layoutItem ? { layout_json: layoutItem.json } : {}), file_name: parserItem.file.name }) });
       const data: any = await response.json();
       if (!response.ok) throw new Error((data.details ?? [data.error]).filter(Boolean).join(" · "));
       await loadDocuments(data.document.id);
-      setNotice("JSON результата парсера сохранён. OCR и распознавание не запускались.");
+      setNotice(layoutItem ? "Результаты analysis.json и layout.json сохранены. OCR не запускался." : "JSON результата парсера сохранён. OCR и распознавание не запускались.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Файл не удалось прочитать как JSON");
     } finally {
@@ -247,7 +260,7 @@ export default function Home() {
         </div>
         <div className="sidebar-bottom">
           <button className="import-button" onClick={() => uploadRef.current?.click()} disabled={busy}><Upload size={16} /> {busy ? "Импортирую…" : "Импорт JSON парсера"}</button>
-          <input ref={uploadRef} type="file" accept="application/json,.json" hidden onChange={(event) => void uploadParserJson(event.target.files?.[0])} />
+          <input ref={uploadRef} type="file" accept="application/json,.json" multiple hidden onChange={(event) => void uploadParserJson(event.target.files ?? undefined)} />
           <div className="storage-note"><Database size={14} /><span><strong>Постоянное хранилище</strong><small>Cloudflare D1 · межустройственная синхронизация</small></span><CheckCircle2 size={14} className="storage-check" /></div>
         </div>
       </aside>
@@ -325,7 +338,7 @@ export default function Home() {
               {extraction.missing_fields?.length > 0 && <section className="missing-note"><CircleHelp size={15} /><span><strong>Пустые реквизиты не дополнены:</strong> {extraction.missing_fields.map((key: string) => extraction.fields?.[key]?.label ?? key).join(", ")}</span></section>}
             </>}
 
-            {activeTab === "parser" && <section className="parser-explorer panel-card"><div className="panel-heading"><div><span className="eyebrow">ВХОДНОЙ СЛОЙ</span><h3>Структура Document Parser</h3></div><button className="text-action" onClick={() => void copyParserJson()}><Clipboard size={14} /> Копировать JSON</button></div><p className="parser-note">Показан сохранённый входной JSON. Эта структура используется алгоритмом извлечения и хранится отдельно от результата.</p><div className="schema-tabs">{schemaSections.map((section) => <button key={section} className={parserSection === section ? "active" : ""} onClick={() => setParserSection(section)}>{section}</button>)}</div><div className="json-panel parser-json"><pre>{JSON.stringify(parserJson?.[parserSection] ?? null, null, 2)}</pre></div><div className="parser-foot"><span><Hash size={13} /> {Array.isArray(parserJson?.[parserSection]) ? `${parserJson[parserSection].length} элементов` : `${Object.keys(parserJson?.[parserSection] ?? {}).length} свойств`}</span><span>parser_output_version: {parserJson?.parser_output_version ?? "reference-compatible"}</span></div></section>}
+            {activeTab === "parser" && <section className="parser-explorer panel-card"><div className="panel-heading"><div><span className="eyebrow">ВХОДНОЙ СЛОЙ</span><h3>Структура Document Parser</h3></div><button className="text-action" onClick={() => void copyParserJson()}><Clipboard size={14} /> Копировать JSON</button></div><p className="parser-note">Входной JSON хранится отдельно от результата. Для native JSON без logical_tables здесь показаны таблицы, собранные адаптером из ячеек и фрагментов.</p><div className="schema-tabs">{schemaSections.map((section) => <button key={section} className={parserSection === section ? "active" : ""} onClick={() => setParserSection(section)}>{section}</button>)}</div><div className="json-panel parser-json"><pre>{JSON.stringify(parserSection === "visual_layout" ? rawParserJson?.visual_layout ?? parserJson?.layout_json ?? null : parserSection === "logical_tables" ? rawParserJson?.logical_tables ?? parserView?.tables ?? null : parserSection === "provenance" ? sourceElements.map((element) => ({ id: element.id, provenance: element.provenance })) : rawParserJson?.[parserSection] ?? null, null, 2)}</pre></div><div className="parser-foot"><span><Hash size={13} /> {parserSection === "logical_tables" && !rawParserJson?.logical_tables ? `${parserView?.tables?.length ?? 0} адаптированных таблиц` : Array.isArray(rawParserJson?.[parserSection]) ? `${rawParserJson[parserSection].length} элементов` : `${Object.keys(rawParserJson?.[parserSection] ?? {}).length} свойств`}</span><span>parser_output_version: {rawParserJson?.parser_output_version ?? rawParserJson?.analysis_version ?? "Document Parser"}</span></div></section>}
 
             {activeTab === "json" && <section className="export-panel panel-card"><div className="panel-heading"><div><span className="eyebrow">НОРМАЛИЗОВАННЫЙ РЕЗУЛЬТАТ</span><h3>JSON Structured Extraction</h3></div><div className="export-actions"><button className="secondary-button" onClick={() => void navigator.clipboard.writeText(JSON.stringify(extraction, null, 2)).then(() => setNotice("Результат скопирован"))} disabled={!extraction}><Clipboard size={14} /> Копировать</button><button className="primary-button compact" onClick={() => void exportJson()} disabled={!extraction}><Download size={14} /> Скачать JSON</button></div></div>{extraction ? <div className="json-panel"><pre>{JSON.stringify(extraction, null, 2)}</pre></div> : <div className="no-json"><FileJson2 size={25} /><strong>Сначала запустите извлечение</strong><span>Здесь появится нормализованный JSON с версиями, полями, таблицами и provenance.</span></div>}</section>}
           </> : <section className="loading-screen panel-card"><span className="spinner" /> {loading ? "Открываю документы…" : "Выберите документ слева"}</section>}
@@ -338,21 +351,27 @@ export default function Home() {
         <div className="source-panel-header"><div className="source-title"><span className="eyebrow">ПЕРВОИСТОЧНИК</span><strong>{citation?.cell_address ? citation.sheet_name : citation?.page_no ? `Страница ${citation.page_no}` : "Документ"}</strong></div><button className="icon-button" onClick={() => setCitation(null)} aria-label="Сбросить выделение"><PanelRightOpen size={17} /></button></div>
         <div className="source-toggle"><button className={sourceTab === "view" ? "active" : ""} onClick={() => setSourceTab("view")}><FolderOpen size={14} /> Представление</button><button className={sourceTab === "json" ? "active" : ""} onClick={() => setSourceTab("json")}><Code2 size={14} /> Parser JSON</button></div>
         {sourceTab === "view" ? <>
-          <div className="source-demo-banner"><span className="demo-star">✳</span><span><strong>Демонстрационное представление</strong><small>Не исходный PDF/XLSX. Геометрия и ячейки согласованы с provenance.</small></span></div>
+          <div className="source-demo-banner"><span className="demo-star">✳</span><span><strong>{activeDocument?.is_demo ? "Демонстрационное представление" : "Представление по результату парсера"}</strong><small>{activeDocument?.is_demo ? "Не исходный PDF/XLSX. Геометрия и ячейки согласованы с provenance." : "Исходный файл не загружен. Показаны распознанные фрагменты и таблицы с адресами источника."}</small></span></div>
           {activeDocument?.format === "XLSX" && <div className="sheet-tabs">{sheetNames.map((sheet) => <button key={sheet} onClick={() => setCurrentSheet(sheet)} className={currentSheet === sheet ? "active" : ""}>{sheet}</button>)}</div>}
-          {activeDocument?.format !== "XLSX" && <div className="page-controls"><button onClick={() => setCurrentPage((value) => Math.max(1, value - 1))} disabled={currentPage <= 1}>‹</button><span>Страница <strong>{currentPage}</strong> из {pageCount}</span><button onClick={() => setCurrentPage((value) => Math.min(pageCount, value + 1))} disabled={currentPage >= pageCount}>›</button><span className="page-size">595 × 842 pt</span></div>}
+          {sourceHasPageNavigation && <div className="page-controls"><button onClick={() => setCurrentPage((value) => Math.max(1, value - 1))} disabled={currentPage <= 1}>‹</button><span>Страница <strong>{currentPage}</strong> из {pageCount}</span><button onClick={() => setCurrentPage((value) => Math.min(pageCount, value + 1))} disabled={currentPage >= pageCount}>›</button><span className="page-size">{sourcePageSizeLabel}</span></div>}
           <div className={`source-sheet ${activeDocument?.format === "XLSX" ? "source-workbook" : ""}`}>
-            {activeDocument?.format === "XLSX" && <div className="sheet-column-head">A&nbsp;&nbsp; B&nbsp;&nbsp; C&nbsp;&nbsp; D&nbsp;&nbsp; E&nbsp;&nbsp; F&nbsp;&nbsp; G&nbsp;&nbsp; H&nbsp;&nbsp; I</div>}
+            {activeDocument?.format === "XLSX" && <div className="sheet-column-head">{sheetNames.join(" · ")}</div>}
             <div className="source-page-head"><span className="source-org">{activeDocument?.title ?? "Документ"}</span><span>{activeDocument?.file_name}</span></div>
-            {sourceTables.filter((table) => activeDocument?.format === "XLSX" ? table.rows.some((row) => row.sheet_name === currentSheet) : table.rows.some((row) => row.page_no === currentPage) || (table as any).page_no === currentPage).map((table) => {
-              const rows = table.rows.filter((row) => activeDocument?.format === "XLSX" ? row.sheet_name === currentSheet : row.page_no === currentPage);
+            {sourceTables.filter(sourceTableIsVisible).map((table) => {
+              const rows = sourceRowsForTable(table);
               return <div className="source-table-block" key={table.id}><div className="source-table-caption">{table.caption}</div><table className="source-document-table"><thead><tr>{table.headers.map((header, i) => <th key={i}>{header}</th>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.row_id}>{row.cells.map((cell, i) => {
                 const sourceId = cell.id ?? cell.provenance?.source_part_id;
                 const selected = Boolean(citation && ((citation.source_part_id && sourceId === citation.source_part_id) || (citation.cell_address && cell.address === citation.cell_address)));
                 return <td key={sourceId ?? i} className={selected ? "source-highlight" : ""} data-cell-id={sourceId}><button onClick={() => { const p = cell.provenance ?? { document_id: activeDocument?.id ?? "", source_part_id: sourceId, page_no: row.page_no ?? null, sheet_name: row.sheet_name ?? null, cell_address: cell.address ?? null, bbox: cell.bbox ?? null, source_text: cell.text, confidence: 0.9 }; setCitation(p); }} title="Перейти к источнику">{cell.text || <span className="empty-cell">—</span>}</button></td>;
               })}</tr>)}</tbody></table></div>;
             })}
-            {!sourceTables.some((table) => activeDocument?.format === "XLSX" ? table.rows.some((row) => row.sheet_name === currentSheet) : table.rows.some((row) => row.page_no === currentPage) || (table as any).page_no === currentPage) && <div className="source-empty-page"><FileText size={25} /><strong>Страница {currentPage}</strong><span>На этой странице нет структурированных таблиц. Исходный текст доступен во входном JSON.</span></div>}
+            {sourceElements.filter((element) => element.kind !== "cell" && (!sourceHasPageNavigation || element.provenance?.page_no === currentPage || element.provenance?.page_no == null) && element.text?.trim()).filter((element, index, all) => all.findIndex((candidate) => candidate.text === element.text && candidate.provenance?.page_no === element.provenance?.page_no) === index).map((element) => {
+              const selected = Boolean(citation && citation.source_part_id === element.id);
+              return <button key={element.id} className={`source-text-fragment ${selected ? "source-highlight" : ""}`} onClick={() => setCitation(element.provenance)} data-source-element-id={element.id}>
+                <span>{element.text}</span><small>Parser fragment · {element.provenance?.source_ref ?? element.id}</small>
+              </button>;
+            })}
+            {!sourceTables.some(sourceTableIsVisible) && !sourceElements.some((element) => element.kind !== "cell" && (!sourceHasPageNavigation || element.provenance?.page_no === currentPage || element.provenance?.page_no == null) && element.text?.trim()) && <div className="source-empty-page"><FileText size={25} /><strong>{sourceHasPageNavigation ? `Страница ${currentPage}` : activeDocument?.format === "XLSX" ? currentSheet : "Исходные фрагменты"}</strong><span>В подготовленном результате парсера нет структурированных таблиц или текста для этого представления.</span></div>}
             <div className="source-signatures"><span>Подготовленная копия</span><span>Без юридической силы</span></div>
           </div>
           {citation && <div className="citation-card"><div className="citation-heading"><span className="citation-pin" /><strong>Источник значения</strong></div><p>«{citation.source_text || "Пустая ячейка"}»</p><div className="citation-meta"><LocationText provenance={citation} /><span>Уверенность {Math.round((citation.confidence ?? 0) * 100)}%</span></div>{citation.bbox && <small className="bbox-detail">PDF bbox: [{citation.bbox.l.toFixed(1)}, {citation.bbox.t.toFixed(1)}, {citation.bbox.r.toFixed(1)}, {citation.bbox.b.toFixed(1)}] pt · {citation.coordinate_origin ?? citation.bbox.coord_origin}</small>}</div>}

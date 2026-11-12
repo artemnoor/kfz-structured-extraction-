@@ -18,6 +18,7 @@ const managedLinux = readExecutionProfile() === "managed-linux";
 const localBindingConfig = {
   main: "./worker/index.ts",
   compatibility_flags: ["nodejs_compat"],
+  ai: { binding: "AI" },
   d1_databases: d1
     ? [
         {

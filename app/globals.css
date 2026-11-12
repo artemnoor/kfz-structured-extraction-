@@ -118,3 +118,5 @@ button:focus-visible,input:focus-visible{outline:3px solid rgba(36,95,202,.3);ou
   .page-heading h1{font-size:23px}
   .stage-pill span{font-size:9px}
 }
+/* Parser-provided text evidence in the document preview. */
+.source-text-fragment{position:relative;display:flex;width:100%;flex-direction:column;gap:7px;margin:0 0 8px;padding:10px 11px;border:1px solid #e8edef;border-left:2px solid #c5d0d4;border-radius:6px;background:#fff;color:#526269;text-align:left;font-size:10px;line-height:1.55;cursor:pointer;transition:border-color .15s,background .15s,box-shadow .15s}.source-text-fragment:hover{border-color:#c7d8ef;background:#f9fbff}.source-text-fragment small{color:#9aa6ab;font:400 8px "DM Mono",monospace;word-break:break-all}.source-text-fragment.source-highlight{border-color:#e2b347;border-left-color:#d59c29;background:#fff4d4;box-shadow:0 0 0 1px #f3d88b}.source-text-fragment.source-highlight span{color:#755012;font-weight:700}

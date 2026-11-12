@@ -25,23 +25,30 @@ assert.equal(before.document.parser_json.logical_tables.find((table) => table.id
 const existingVersion = before.document.extraction_version ?? 0;
 const firstResponse = await fetch(new URL(`/api/documents/${encodeURIComponent(kfz.id)}/extract`, baseUrl), { method: "POST" });
 const first = await firstResponse.json();
-assert.equal(firstResponse.status, 201, JSON.stringify(first));
-assert.equal(first.extraction.version, existingVersion + 1);
-assert.equal(first.extraction.line_items.length, 18);
+if (firstResponse.status === 201) {
+  assert.equal(first.extraction.version, existingVersion + 1);
+  assert.equal(first.extraction.line_items.length, 18);
+  assert.equal(first.extraction.extraction_engine.llm.called, true);
 
-const secondResponse = await fetch(new URL(`/api/documents/${encodeURIComponent(kfz.id)}/extract`, baseUrl), { method: "POST" });
-const second = await secondResponse.json();
-assert.equal(secondResponse.status, 201, JSON.stringify(second));
-assert.equal(second.extraction.version, existingVersion + 2);
+  const secondResponse = await fetch(new URL(`/api/documents/${encodeURIComponent(kfz.id)}/extract`, baseUrl), { method: "POST" });
+  const second = await secondResponse.json();
+  assert.equal(secondResponse.status, 201, JSON.stringify(second));
+  assert.equal(second.extraction.version, existingVersion + 2);
 
-const reloaded = await getJson(`/api/documents/${encodeURIComponent(kfz.id)}`);
-assert.equal(reloaded.document.extraction_version, existingVersion + 2);
-assert.equal(reloaded.document.latest_extraction.extraction_id, second.extraction.extraction_id);
-const history = await getJson(`/api/documents/${encodeURIComponent(kfz.id)}/extractions`);
-assert.ok(history.history.some((entry) => entry.id === first.extraction.extraction_id));
-assert.ok(history.history.some((entry) => entry.id === second.extraction.extraction_id));
-const stored = await getJson(`/api/extractions/${encodeURIComponent(second.extraction.extraction_id)}`);
-assert.equal(stored.extraction.document_id, kfz.id);
+  const reloaded = await getJson(`/api/documents/${encodeURIComponent(kfz.id)}`);
+  assert.equal(reloaded.document.extraction_version, existingVersion + 2);
+  assert.equal(reloaded.document.latest_extraction.extraction_id, second.extraction.extraction_id);
+  const history = await getJson(`/api/documents/${encodeURIComponent(kfz.id)}/extractions`);
+  assert.ok(history.history.some((entry) => entry.id === first.extraction.extraction_id));
+  assert.ok(history.history.some((entry) => entry.id === second.extraction.extraction_id));
+  const stored = await getJson(`/api/extractions/${encodeURIComponent(second.extraction.extraction_id)}`);
+  assert.equal(stored.extraction.document_id, kfz.id);
+} else {
+  assert.ok([502, 503].includes(firstResponse.status), JSON.stringify(first));
+  assert.match(first.code ?? "", /^WORKERS_AI_/);
+  const unchanged = await getJson(`/api/documents/${encodeURIComponent(kfz.id)}`);
+  assert.equal(unchanged.document.extraction_version ?? 0, existingVersion);
+}
 
 const rawFixture = JSON.parse(await readFile(new URL("../data/parser-results/invoice-2026-0408.json", import.meta.url), "utf8"));
 const importedId = `api-smoke-${Date.now()}`;
@@ -67,7 +74,16 @@ assert.equal(importedDoc.document.is_demo, false);
 assert.equal(importedDoc.document.parser_json.document_id, importedId);
 const importedExtractionResponse = await fetch(new URL(`/api/documents/${encodeURIComponent(importedId)}/extract`, baseUrl), { method: "POST" });
 const importedExtraction = await importedExtractionResponse.json();
-assert.equal(importedExtractionResponse.status, 201, JSON.stringify(importedExtraction));
-assert.equal(importedExtraction.extraction.document_type, "invoice");
+if (importedExtractionResponse.status === 201) {
+  assert.equal(importedExtraction.extraction.document_type, "invoice");
+  assert.equal(importedExtraction.extraction.extraction_engine.llm.called, true);
+} else {
+  assert.ok([502, 503].includes(importedExtractionResponse.status), JSON.stringify(importedExtraction));
+  assert.match(importedExtraction.code ?? "", /^WORKERS_AI_/);
+  const unchanged = await getJson(`/api/documents/${encodeURIComponent(importedId)}`);
+  assert.equal(unchanged.document.extraction_version ?? 0, 0);
+}
 
-console.log("API smoke passed: D1 seed/read, extraction versions, persisted reload, history, parser JSON import, and imported-document extraction.");
+console.log(firstResponse.status === 201
+  ? "API smoke passed: D1 read/write, real Workers AI extraction, version history, reload, parser JSON import, and imported-document extraction."
+  : "API smoke passed: D1 read/write and parser JSON import; extraction fails closed because Workers AI is not reachable in this environment.");

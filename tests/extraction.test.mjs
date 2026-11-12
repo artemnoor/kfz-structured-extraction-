@@ -22,6 +22,7 @@ test("date, currency and unit normalization keeps exact decimal strings", () => 
   assert.deepEqual(normalizeDate("31 марта 2026 г."), { value: "2026-03-31", status: "extracted", note: null });
   assert.deepEqual(normalizeDate("04/05/2026"), { value: null, status: "review", note: "Порядок дня и месяца неоднозначен" });
   assert.deepEqual(normalizeMoney("5 742 183,40 руб."), { value: { amount: "5742183.40", currency: "RUB" }, status: "extracted", note: null });
+  assert.equal(normalizeMoney("1,234 руб.").status, "review");
   assert.equal(normalizeMoney("56 4?0,00 руб.").status, "review");
   assert.equal(normalizeUnit("чел.-ч").value, "person_hour");
   assert.equal(normalizeUnit("м³").value, "cubic_meter");
