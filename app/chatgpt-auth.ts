@@ -1,5 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { env } from "cloudflare:workers";
+import { verifySessionJwt } from "@/lib/security/session-jwt.mjs";
 
 export type ChatGPTUser = {
   userId: string;
@@ -10,33 +12,31 @@ export type ChatGPTUser = {
 
 const USER_ID_HEADER = "oai-authenticated-user-id";
 const USER_EMAIL_HEADER = "oai-authenticated-user-email";
-const USER_FULL_NAME_HEADER = "oai-authenticated-user-full-name";
-const USER_FULL_NAME_ENCODING_HEADER =
-  "oai-authenticated-user-full-name-encoding";
-const PERCENT_ENCODED_UTF8 = "percent-encoded-utf-8";
 const SIGN_IN_PATH = "/signin-with-chatgpt";
 const SIGN_OUT_PATH = "/signout-with-chatgpt";
 const CALLBACK_PATH = "/callback";
 
 export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   const requestHeaders = await headers();
-  const userId = requestHeaders.get(USER_ID_HEADER);
-  const email = requestHeaders.get(USER_EMAIL_HEADER);
-  if (!userId || !email) return null;
+  // The local Vite auth middleware deletes client-supplied OAI headers, checks
+  // its loopback-only sign-in cookie, and adds this marker on the server side.
+  if (import.meta.env.DEV && requestHeaders.get("x-app-local-auth") === "1") {
+    const userId = requestHeaders.get(USER_ID_HEADER);
+    const email = requestHeaders.get(USER_EMAIL_HEADER);
+    if (userId === "local_seedy" && email === "seedy@sites.test") {
+      return { userId, email, displayName: "Seedy", fullName: "Seedy" };
+    }
+  }
 
-  const encodedFullName = requestHeaders.get(USER_FULL_NAME_HEADER);
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get(USER_FULL_NAME_ENCODING_HEADER) === PERCENT_ENCODED_UTF8
-      ? safeDecodeURIComponent(encodedFullName)
-      : null;
-
-  return {
-    userId,
-    displayName: fullName ?? email,
-    email,
-    fullName,
-  };
+  // Production does not trust raw oai-authenticated-user-* headers. Only a
+  // verifiable host-issued HS256 session can establish a user identity.
+  const secret = String(env.AUTH_SESSION_HMAC_SECRET ?? "");
+  const token = requestHeaders.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
+  if (!secret || !token) return null;
+  const claims = await verifySessionJwt(token, secret, { issuer: String(env.AUTH_SESSION_ISSUER ?? ""), audience: String(env.AUTH_SESSION_AUDIENCE ?? "") });
+  if (!claims) return null;
+  const fullName = typeof claims.name === "string" ? claims.name : null;
+  return { userId: claims.sub, email: claims.email, displayName: fullName ?? claims.email, fullName };
 }
 
 export async function requireChatGPTUser(
@@ -79,12 +79,4 @@ function isReservedAuthPath(pathname: string): boolean {
     pathname === SIGN_OUT_PATH ||
     pathname === CALLBACK_PATH
   );
-}
-
-function safeDecodeURIComponent(value: string): string | null {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return null;
-  }
 }

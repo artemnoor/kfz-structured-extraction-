@@ -39,6 +39,7 @@ yarn-error.log*
 /.agents/
 /.codex/
 /outputs/
+/output/playwright/
 /work/
 
 # OS metadata

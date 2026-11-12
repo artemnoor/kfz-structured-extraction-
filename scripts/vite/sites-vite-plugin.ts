@@ -46,7 +46,7 @@ export function sites({ mockAuth = true } = {}): Plugin {
       server.config.logger.info(`Sites local sign-in: ${localEmail}`);
       server.middlewares.use((request, response, next) => {
         for (const name of Object.keys(request.headers)) {
-          if (name.startsWith("oai-authenticated-user-")) {
+          if (name.startsWith("oai-authenticated-user-") || name === "x-app-local-auth") {
             removeHeader(request, name);
           }
         }
@@ -106,6 +106,7 @@ export function sites({ mockAuth = true } = {}): Plugin {
         const signOut = url.pathname === "/signout-with-chatgpt";
         if (!signIn && !signOut) {
           if (signInCookies.length === 1 && signInCookies[0] === "1") {
+            setHeader(request, "x-app-local-auth", "1");
             setHeader(request, "oai-authenticated-user-id", localUserId);
             setHeader(request, "oai-authenticated-user-email", localEmail);
             setHeader(

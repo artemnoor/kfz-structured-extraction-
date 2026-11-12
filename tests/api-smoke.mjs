@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const baseUrl = process.env.BASE_URL ?? "http://127.0.0.1:4173";
-const ownerA = { "oai-authenticated-user-id": "api-smoke-owner-a", "oai-authenticated-user-email": "owner-a@example.test" };
-const ownerB = { "oai-authenticated-user-id": "api-smoke-owner-b", "oai-authenticated-user-email": "owner-b@example.test" };
+const baseUrl = process.env.BASE_URL ?? "http://127.0.0.1:5173";
+const login = await fetch(new URL("/signin-with-chatgpt?return_to=%2F", baseUrl), { redirect: "manual" });
+assert.equal(login.status, 302, "local development requires explicit sign-in");
+const localCookie = login.headers.get("set-cookie")?.split(";")[0];
+assert.match(localCookie ?? "", /^__sites_local_auth=1$/);
+const ownerA = { cookie: localCookie };
+const spoofedOwner = { ...ownerA, "oai-authenticated-user-id": "forged-user", "oai-authenticated-user-email": "forged@example.test" };
+const anonymousSpoof = { "oai-authenticated-user-id": "forged-user", "oai-authenticated-user-email": "forged@example.test" };
 const json = async (path, init = {}) => {
   const response = await fetch(new URL(path, baseUrl), init);
   return { response, body: await response.json() };
@@ -13,6 +18,11 @@ const health = await json("/api/health");
 assert.ok(health.response.ok, JSON.stringify(health.body));
 assert.equal(health.body.storage, "Cloudflare D1");
 assert.equal(typeof health.body.llm.configured, "boolean");
+if (!health.body.llm.configured) {
+  const providerUnavailable = await json("/api/llm/models", { headers: ownerA });
+  assert.equal(providerUnavailable.response.status, 503);
+  assert.equal(providerUnavailable.body.code, "POLZA_NOT_CONFIGURED");
+}
 
 const listing = await json("/api/documents");
 assert.ok(listing.response.ok, JSON.stringify(listing.body));
@@ -27,8 +37,10 @@ assert.equal(demoDetail.body.document.parser_json.document_id, demo.id);
 
 const unauthenticatedExtraction = await json(`/api/documents/${encodeURIComponent(demo.id)}/extract`, { method: "POST" });
 assert.equal(unauthenticatedExtraction.response.status, 401);
-const unauthenticatedImport = await json("/api/parser-json", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+const unauthenticatedImport = await json("/api/parser-json", { method: "POST", headers: { ...anonymousSpoof, "content-type": "application/json" }, body: "{}" });
 assert.equal(unauthenticatedImport.response.status, 401);
+const unauthenticatedModels = await json("/api/llm/models", { headers: anonymousSpoof });
+assert.equal(unauthenticatedModels.response.status, 401);
 
 const rawFixture = JSON.parse(await readFile(new URL("../data/parser-results/invoice-2026-0408.json", import.meta.url), "utf8"));
 const importedId = `api-smoke-${crypto.randomUUID()}`;
@@ -66,14 +78,17 @@ assert.equal(extraction.body.extraction.extraction_engine.llm.called, false);
 assert.equal(extraction.body.extraction.input_version, 1);
 
 const extractionId = extraction.body.extraction.extraction_id;
-const outsiderDocument = await json(`/api/documents/${encodeURIComponent(importedId)}`, { headers: ownerB });
+const outsiderDocument = await json(`/api/documents/${encodeURIComponent(importedId)}`, { headers: anonymousSpoof });
 assert.equal(outsiderDocument.response.status, 404);
-const outsiderHistory = await json(`/api/documents/${encodeURIComponent(importedId)}/extractions`, { headers: ownerB });
+const outsiderHistory = await json(`/api/documents/${encodeURIComponent(importedId)}/extractions`, { headers: anonymousSpoof });
 assert.equal(outsiderHistory.response.status, 404);
-const outsiderExtraction = await json(`/api/extractions/${encodeURIComponent(extractionId)}`, { headers: ownerB });
+const outsiderExtraction = await json(`/api/extractions/${encodeURIComponent(extractionId)}`, { headers: anonymousSpoof });
 assert.equal(outsiderExtraction.response.status, 404);
-const outsiderImportCollision = await importDoc(rawFixture, ownerB);
-assert.equal(outsiderImportCollision.response.status, 409);
+const spoofedImport = await importDoc(rawFixture, anonymousSpoof);
+assert.equal(spoofedImport.response.status, 401);
+
+const spoofedIdentity = await json(`/api/documents/${encodeURIComponent(importedId)}`, { headers: spoofedOwner });
+assert.equal(spoofedIdentity.response.status, 200, "client-supplied OAI identity headers must not replace the local authenticated session");
 
 const unchangedImport = await importDoc(rawFixture);
 assert.equal(unchangedImport.response.status, 200);
@@ -101,4 +116,4 @@ const stored = await json(`/api/extractions/${encodeURIComponent(reExtraction.bo
 assert.equal(stored.response.status, 200);
 assert.equal(stored.body.extraction.document_id, importedId);
 
-console.log("API smoke passed: D1 persistence, authenticated owner scope (local trusted-header fixture), import versioning, stale-result invalidation, rules-only rerun, history reload, and anonymous write denial. Workers AI configuration reported:", health.body.llm.configured ? "configured" : "not configured");
+console.log("API smoke passed: D1 persistence, local sign-in, spoofed-header rejection, import versioning, stale-result invalidation, rules-only rerun, history reload, and anonymous write denial. Polza AI configuration reported:", health.body.llm.configured ? "configured" : "not configured");

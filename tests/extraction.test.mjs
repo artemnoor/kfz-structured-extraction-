@@ -119,8 +119,59 @@ test("empty fields remain null and ambiguous dates are flagged", async () => {
   assert.ok(result.missing_fields.includes("effective_date"));
 });
 
+test("addendum rows expose parameter, old and new values, reason and each source locator", async () => {
+  const parsed = await parserResult("addendum-2026-04");
+  const result = extractStructuredDocument(parsed, { extractionId: "test-addendum-rows" });
+  assert.equal(result.changes.length, 3);
+  const first = result.changes[0];
+  assert.equal(first.parameter.source_value, "п. 2.1");
+  assert.equal(first.old_value.source_value, "4 860 000,00 руб.");
+  assert.equal(first.new_value.source_value, "5 214 600,00 руб.");
+  assert.equal(first.reason.source_value, "Дополнительный объём по приложению 1");
+  for (const key of ["parameter", "old_value", "new_value", "reason"]) {
+    assert.equal(first[key].status, "extracted", key);
+    assert.match(first[key].provenance.source_ref, /#\/tables\/1\/cells\//, key);
+    assert.equal(first[key].provenance.source_text, first[key].source_value);
+  }
+});
+
+test("provenance gaps, unavailable sources and low OCR confidence force review", async () => {
+  const parsed = {
+    document_id: "provenance-audit", title: "Договор", source_extension: ".txt",
+    parts: [
+      { kind: "paragraph", id: "unlocated", text: "Номер договора: Д-1", _synthetic: true },
+      { kind: "paragraph", id: "unavailable", text: "Дата договора: 01.03.2026", source_available: false, provenance: [{ source_ref: "#/parts/1", source_text: "Дата договора: 01.03.2026" }] },
+      { kind: "paragraph", id: "low-ocr", text: "Цена договора: 10 000 руб.", confidence: 0.4, provenance: [{ source_ref: "#/parts/2", source_text: "Цена договора: 10 000 руб.", confidence: 0.4 }] },
+    ],
+  };
+  const result = extractStructuredDocument(parsed, { extractionId: "provenance-check" });
+  assert.equal(result.fields.contract_number.status, "review");
+  assert.equal(result.fields.contract_date.status, "review");
+  assert.equal(result.fields.contract_date.provenance.source_available, false);
+  assert.equal(result.fields.contract_amount.status, "review");
+  assert.equal(result.fields.contract_amount.value, null);
+});
+
+test("compare reports addendum value changes, missing data and changed provenance", async () => {
+  const parsed = await parserResult("addendum-2026-04");
+  const rules = extractStructuredDocument(parsed, { extractionId: "compare-rules" });
+  const candidate = structuredClone(rules);
+  candidate.changes[0].new_value = { ...candidate.changes[0].new_value, source_value: "5 400 000,00 руб.", value: "5400000.00" };
+  const changed = compareExtractionResults(rules, candidate);
+  assert.ok(changed.discrepancies.some((item) => item.path === "changes.addendum-changes-r001" && item.differing_fields.includes("new_value")));
+  const missing = structuredClone(rules);
+  missing.changes[0].old_value = { ...missing.changes[0].old_value, value: null, status: "missing", source_value: null, provenance: null };
+  const missingCompare = compareExtractionResults(rules, missing);
+  assert.ok(missingCompare.discrepancies.some((item) => item.path === "changes.addendum-changes-r001" && item.missing_fields.includes("old_value")));
+  const provenance = structuredClone(rules);
+  provenance.changes[0].reason = { ...provenance.changes[0].reason, provenance: { ...provenance.changes[0].reason.provenance, source_ref: "#/parts/404" } };
+  const provenanceCompare = compareExtractionResults(rules, provenance);
+  assert.ok(provenanceCompare.discrepancies.some((item) => item.path === "changes.addendum-changes-r001" && item.differing_fields.includes("reason")));
+});
+
 test("parser JSON importer shape checks distinguish parsed JSON from source files", async () => {
   const parsed = await parserResult("invoice-2026-0408");
   assert.deepEqual(parserJsonShapeErrors(parsed), []);
   assert.ok(parserJsonShapeErrors({ filename: "scan.pdf", bytes: "..." }).length > 0);
+  assert.deepEqual(parserJsonShapeErrors({ document_id: "text-only", parts: [{ kind: "paragraph", text: "Текст документа без таблиц" }] }), []);
 });

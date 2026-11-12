@@ -201,7 +201,7 @@ export default function Home() {
     setBusy(true);
     setError("");
     try {
-      const syntheticAcknowledged = window.confirm("Разрешить Workers AI обрабатывать импортированный JSON? Подтвердите только для синтетических или обезличенных данных. Если отказаться, документ будет доступен только в режиме Rules Only.");
+      const syntheticAcknowledged = window.confirm("Разрешить Polza AI обрабатывать импортированный JSON? Подтвердите только для синтетических или обезличенных данных. Если отказаться, документ будет доступен только в режиме Rules Only.");
       const parsedFiles = await Promise.all(selectedFiles.map(async (file) => ({ file, json: JSON.parse(await file.text()) })));
       const layoutItem = parsedFiles.find(({ json }) => json && typeof json === "object" && !json.document && !json.model_parts && json.pages && json.source && Array.isArray(json.parts));
       const parserItem = parsedFiles.find((item) => item !== layoutItem) ?? parsedFiles[0];
@@ -320,11 +320,11 @@ export default function Home() {
           {activeDocument?.latest_run_status === "failed" && !error && <div className="alert error-alert"><AlertCircle size={17} /><span>Последний запуск завершился ошибкой: {activeDocument.latest_run_error?.message ?? activeDocument.latest_run_error?.technical?.reason ?? "подробности доступны в истории"}</span></div>}
 
           {activeDocument && <section className="mode-selector panel-card" aria-label="Режим извлечения">
-            <div className="mode-selector-heading"><div><span className="eyebrow">ОБРАБОТКА</span><h3>Режим извлечения</h3></div><span className={`llm-state ${llmReadiness?.configured ? "llm-state-ready" : "llm-state-off"}`}><span />Workers AI {llmReadiness?.configured ? "доступна по конфигурации" : "не настроена"}</span></div>
+            <div className="mode-selector-heading"><div><span className="eyebrow">ОБРАБОТКА</span><h3>Режим извлечения</h3></div><span className={`llm-state ${llmReadiness?.configured ? "llm-state-ready" : "llm-state-off"}`}><span />Polza AI {llmReadiness?.configured ? "доступна по конфигурации" : "не настроена"}</span></div>
             <div className="mode-options" role="radiogroup" aria-label="Режим Structured Extraction">
               {(["rules_only", "llm_assisted", "compare"] as const).map((value) => <button key={value} role="radio" aria-checked={extractionMode === value} className={extractionMode === value ? "selected" : ""} onClick={() => setExtractionMode(value)}><strong>{modeLabels[value]}</strong><small>{value === "rules_only" ? "Только детерминированные правила" : value === "llm_assisted" ? "Правила + подтверждённые ответы LLM" : "Одинаковый JSON в обоих режимах"}</small></button>)}
             </div>
-            <div className="mode-footnote"><span>Модель: {llmReadiness?.model ?? "@cf/meta/llama-3.3-70b-instruct-fp8-fast"}</span><span>{extractionMode !== "rules_only" && !llmAllowed ? "Для импортированного документа LLM отключена: требуется отметить данные синтетическими/обезличенными при импорте." : llmReadiness?.configured ? `Провайдер: ${llmReadiness.provider}` : "Rules Only работает без LLM. Для LLM нужны серверные CLOUDFLARE_ACCOUNT_ID и CLOUDFLARE_API_TOKEN."}</span></div>
+            <div className="mode-footnote"><span>Модель: {llmReadiness?.model ?? "deepseek/deepseek-v4-flash"}</span><span>{extractionMode !== "rules_only" && !llmAllowed ? "Для импортированного документа LLM отключена: требуется отметить данные синтетическими/обезличенными при импорте." : llmReadiness?.configured ? `Провайдер: ${llmReadiness.provider}` : "Rules Only работает без LLM. Для LLM нужен серверный секрет POLZA_API_KEY."}</span></div>
             {!userAuthenticated && <div className="auth-note">Запуск и сохранение результата требуют входа через ChatGPT. <a href="/signin-with-chatgpt?return_to=%2F">Войти</a></div>}
           </section>}
 

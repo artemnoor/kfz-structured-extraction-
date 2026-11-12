@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { adaptDocumentParserResult, parserInputShapeErrors } from "../lib/parser/document-parser-adapter.mjs";
 import { extractStructuredDocument, classifyDocument } from "../lib/extraction/structured-extraction.mjs";
-import { buildGroundedContext, callWorkersAiForExtraction, WORKERS_AI_MODEL, WorkersAiError } from "../lib/extraction/workers-ai.mjs";
+import { buildGroundedContext, callPolzaForExtraction, POLZA_MODEL, PolzaAiError } from "../lib/extraction/polza-ai.mjs";
 
 const fixture = (name) => readFile(new URL(`./fixtures/${name}`, import.meta.url), "utf8").then(JSON.parse);
 
@@ -157,7 +157,7 @@ test("logical table fragments preserve multi-page rows, repeated headers and mul
   assert.equal(extraction.line_items[1].identifier.provenance.page_no, 2);
 });
 
-test("extraction calls Workers AI, validates JSON Schema and grounds returned IDs to native PDF source", async () => {
+test("extraction calls Polza AI, validates JSON Schema and grounds returned IDs to native PDF source", async () => {
   const [analysis, layout] = await Promise.all([
     fixture("document-parser-native-pdf.analysis.json"),
     fixture("document-parser-native-pdf.layout.json"),
@@ -170,11 +170,12 @@ test("extraction calls Workers AI, validates JSON Schema and grounds returned ID
   assert.ok(dateFragment && actNumberFragment && contractorFragment);
   let calls = 0;
   let request;
-  const binding = {
-    async run(model, body) {
+  const mockPolza = {
+    POLZA_API_KEY: "unit-test-key",
+    async POLZA_FETCH(url, init) {
       calls++;
-      request = { model, body };
-      return { response: JSON.stringify({
+      request = { url, body: JSON.parse(init.body), authorization: init.headers.authorization };
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
         document_type: "act",
         classification_confidence: 0.99,
         field_candidates: [
@@ -183,14 +184,17 @@ test("extraction calls Workers AI, validates JSON Schema and grounds returned ID
           { field_key: "contractor_representative", source_element_id: contractorFragment.source_element_id, source_value: "ООО «ДокКонтур Эпсилон»", confidence: 0.4 },
         ],
         table_mappings: [],
-      }) };
+      }) } }] }), { status: 200, headers: { "content-type": "application/json" } });
     },
   };
-  const llm = await callWorkersAiForExtraction(input, { AI: binding });
+  const llm = await callPolzaForExtraction(input, mockPolza);
   assert.equal(calls, 1);
-  assert.equal(request.model, WORKERS_AI_MODEL);
+  assert.equal(request.url, "https://polza.ai/api/v1/chat/completions");
+  assert.equal(request.authorization, "Bearer unit-test-key");
+  assert.equal(request.body.model, POLZA_MODEL);
   assert.equal(request.body.response_format.type, "json_schema");
-  assert.equal(request.body.response_format.json_schema.additionalProperties, false);
+  assert.equal(request.body.response_format.json_schema.strict, true);
+  assert.equal(request.body.response_format.json_schema.schema.additionalProperties, false);
   assert.equal(llm.called, true);
   assert.equal(llm.response_validated, true);
 
@@ -229,7 +233,7 @@ test("grounded table mappings can map an unfamiliar native XLSX header and prese
       })),
     }],
   };
-  const llm = await callWorkersAiForExtraction(parsed, { AI: { run: async () => ({ response: JSON.stringify(mockResponse) }) } });
+  const llm = await callPolzaForExtraction(parsed, { POLZA_API_KEY: "unit-test-key", POLZA_FETCH: async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(mockResponse) } }] }), { status: 200 }) });
   const result = extractStructuredDocument(parsed, { extractionId: "native-xlsx-test", llm });
   assert.equal(result.document_type, "registry");
   assert.equal(result.line_items.length, 3);
@@ -244,11 +248,11 @@ test("grounded table mappings can map an unfamiliar native XLSX header and prese
 
 test("provider absence and ungrounded output fail closed instead of pretending extraction succeeded", async () => {
   const parsed = await fixture("document-parser-native-pdf.analysis.json");
-  await assert.rejects(callWorkersAiForExtraction(parsed, {}), (error) => error instanceof WorkersAiError && error.status === 503 && error.code === "WORKERS_AI_NOT_CONFIGURED");
-  const invalidBinding = { AI: { run: async () => ({ response: JSON.stringify({
+  await assert.rejects(callPolzaForExtraction(parsed, {}), (error) => error instanceof PolzaAiError && error.status === 503 && error.code === "POLZA_NOT_CONFIGURED");
+  const invalidBinding = { POLZA_API_KEY: "unit-test-key", POLZA_FETCH: async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
     document_type: "act", classification_confidence: 0.99,
     field_candidates: [{ field_key: "act_number", source_element_id: "invented", source_value: "ADM-75", confidence: 1 }],
     table_mappings: [],
-  }) }) } };
-  await assert.rejects(callWorkersAiForExtraction(parsed, invalidBinding), (error) => error instanceof WorkersAiError && error.code === "WORKERS_AI_UNGROUNDED_OUTPUT");
+  }) } }] }), { status: 200 }) };
+  await assert.rejects(callPolzaForExtraction(parsed, invalidBinding), (error) => error instanceof PolzaAiError && error.code === "POLZA_UNGROUNDED_OUTPUT");
 });

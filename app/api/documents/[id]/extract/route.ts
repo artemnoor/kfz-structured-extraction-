@@ -5,7 +5,7 @@ import { getApiIdentity } from "@/app/api/api-auth";
 import { getDocument } from "@/lib/storage";
 import { env } from "cloudflare:workers";
 import { extractStructuredDocument, classifyDocument, compareExtractionResults } from "@/lib/extraction/structured-extraction.mjs";
-import { callWorkersAiForExtraction, WorkersAiError } from "@/lib/extraction/workers-ai.mjs";
+import { callPolzaForExtraction, POLZA_MODEL, PolzaAiError } from "@/lib/extraction/polza-ai.mjs";
 import { consumeRateLimit } from "@/lib/security/rate-limit.mjs";
 import { mayRunLlm, readLimitedBody, requestMode } from "@/lib/security/policy.mjs";
 import { sha256 } from "@/lib/security/hash.mjs";
@@ -13,7 +13,7 @@ import { sha256 } from "@/lib/security/hash.mjs";
 type TechnicalDetails = Record<string, unknown> & { provider?: string | null; model?: string | null };
 
 function errorPayload(error: unknown): { error: string; code: string; technical?: TechnicalDetails } {
-  if (error instanceof WorkersAiError) return {
+  if (error instanceof PolzaAiError) return {
     error: error.message,
     code: error.code,
     technical: { ...error.details, status: error.status, model: error.details?.model ?? null },
@@ -50,8 +50,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const userLimit = await consumeRateLimit(db, `user:${user.userId}`, usesLlm ? "llm_extraction" : "rules_extraction", usesLlm ? 5 : 20, 60);
     if (!userLimit.allowed) return Response.json({ error: "Достигнут лимит запросов. Подождите минуту.", code: "RATE_LIMITED", retry_after: userLimit.resets_at - Math.floor(Date.now() / 1000) }, { status: 429 });
     if (usesLlm) {
-      const globalLimit = await consumeRateLimit(db, "global", "workers_ai_daily", 12, 86400);
-      if (!globalLimit.allowed) return Response.json({ error: "Достигнут дневной лимит Workers AI для демонстрационного контура", code: "AI_DAILY_LIMIT", retry_after: globalLimit.resets_at - Math.floor(Date.now() / 1000) }, { status: 429 });
+      const globalLimit = await consumeRateLimit(db, "global", "polza_ai_daily", 12, 86400);
+      if (!globalLimit.allowed) return Response.json({ error: "Достигнут дневной лимит Polza AI для демонстрационного контура", code: "AI_DAILY_LIMIT", retry_after: globalLimit.resets_at - Math.floor(Date.now() / 1000) }, { status: 429 });
     }
 
     const inputHash = document.input_hash ?? await sha256(JSON.stringify(document.parser_json));
@@ -83,13 +83,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       inputHash,
       mode,
       status: "running",
-      model: usesLlm ? "@cf/meta/llama-3.3-70b-instruct-fp8-fast" : null,
+      model: usesLlm ? POLZA_MODEL : null,
       provider: usesLlm ? "pending" : "rules",
       payload: JSON.stringify({ extraction_id: runId, document_id: id, version: reservedVersion, input_version: document.input_version, input_hash: inputHash, mode, status: "running", started_at: startedAt }),
     });
 
     let llm = null;
-    if (usesLlm) llm = await callWorkersAiForExtraction(document.parser_json, env);
+    if (usesLlm) llm = await callPolzaForExtraction(document.parser_json, env);
     const rulesResult = mode === "compare" ? extractStructuredDocument(document.parser_json, { extractionId: `${runId}-rules`, version: reservedVersion, mode: "rules_only" }) : null;
     const result = extractStructuredDocument(document.parser_json, { extractionId: runId, version: reservedVersion, mode, llm });
     result.input_version = document.input_version;
@@ -123,7 +123,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         await db.update(extractionRuns).set({ status: "failed", provider: technical?.provider ?? null, model: technical?.model ?? null, error: JSON.stringify({ code: payload.code, message: payload.error, technical }), payload: JSON.stringify(failed) }).where(eq(extractionRuns.id, runId));
       } catch { /* Keep the original extraction error; history insertion may fail only if D1 is unavailable. */ }
     }
-    const status = error instanceof WorkersAiError ? error.status : payload.code === "INPUT_VERSION_CONFLICT" ? 409 : 422;
+    const status = error instanceof PolzaAiError ? error.status : payload.code === "INPUT_VERSION_CONFLICT" ? 409 : 422;
     return Response.json(payload, { status });
   }
 }

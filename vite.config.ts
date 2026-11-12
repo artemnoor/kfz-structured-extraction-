@@ -18,7 +18,6 @@ const managedLinux = readExecutionProfile() === "managed-linux";
 const localBindingConfig = {
   main: "./worker/index.ts",
   compatibility_flags: ["nodejs_compat"],
-  ai: { binding: "AI" },
   d1_databases: d1
     ? [
         {
@@ -59,7 +58,7 @@ export default defineConfig(async ({ command }) => {
       connectorPreview(),
       cloudflare({
         // Keep the local Site preview self-contained. Production still receives
-        // its AI binding from the Worker config, while local checks use D1's
+        // provider secrets from the Worker config, while local checks use D1's
         // persisted Miniflare database instead of requiring a Cloudflare login.
         remoteBindings: false,
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
