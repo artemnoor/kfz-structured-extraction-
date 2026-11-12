@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { demoBlueprints } from "../data/demo-blueprints.mjs";
 import { classifyDocument, compareExtractionResults, extractStructuredDocument, normalizeDate, normalizeMoney, normalizeUnit, parserJsonShapeErrors } from "../lib/extraction/structured-extraction.mjs";
+import { adaptDocumentParserResult } from "../lib/parser/document-parser-adapter.mjs";
 
 async function parserResult(id) {
   return JSON.parse(await readFile(new URL(`../data/parser-results/${id}.json`, import.meta.url), "utf8"));
@@ -16,6 +17,19 @@ test("all six parser fixtures are classified from their parsed content", async (
     assert.equal(extractStructuredDocument(parsed, { extractionId: `test-${id}` }).document_type, type, id);
   }
   assert.equal(demoBlueprints.length, 6);
+});
+
+test("LLM-only classification preserves only valid model confidence and always requests review", () => {
+  const parsed = { document_id: "llm-only-classification", title: "Финансовый документ без явного типа", parts: [{ kind: "paragraph", text: "Стороны подтверждают условия" }] };
+  const valid = classifyDocument(parsed, { document_type: "contract", confidence: 0.83 });
+  assert.equal(valid.confidence, 0.83);
+  assert.equal(valid.method, "llm_only");
+  assert.equal(valid.status, "review");
+  for (const confidence of [undefined, null, "0.8", -0.01, 1.01, Number.NaN, Number.POSITIVE_INFINITY]) {
+    const result = classifyDocument(parsed, { document_type: "contract", confidence });
+    assert.equal(result.confidence, null, String(confidence));
+    assert.equal(result.status, "review", String(confidence));
+  }
 });
 
 test("date, currency and unit normalization keeps exact decimal strings", () => {
@@ -133,12 +147,35 @@ test("addendum rows expose parameter, old and new values, reason and each source
     assert.match(first[key].provenance.source_ref, /#\/tables\/1\/cells\//, key);
     assert.equal(first[key].provenance.source_text, first[key].source_value);
   }
+  assert.equal(first.source_cells.length, 4);
+  assert.equal(first.row_status, "extracted");
+  assert.ok(first.source_cells.every((cell) => cell.extracted.provenance?.source_ref));
+});
+
+test("partially populated addendum preserves all source cells and marks only absent values missing", async () => {
+  const parsed = await parserResult("addendum-2026-04");
+  const firstRow = parsed.logical_tables.find((table) => table.id === "addendum-changes").rows[0];
+  firstRow.cells[1].text = "";
+  firstRow.cells[1].provenance.source_text = "";
+  const result = extractStructuredDocument(parsed, { extractionId: "test-addendum-partial" });
+  const row = result.changes[0];
+  assert.equal(row.old_value.value, null);
+  assert.equal(row.old_value.source_value, null);
+  assert.equal(row.old_value.status, "missing");
+  assert.equal(row.parameter.source_value, "п. 2.1");
+  assert.equal(row.new_value.source_value, "5 214 600,00 руб.");
+  assert.equal(row.reason.source_value, "Дополнительный объём по приложению 1");
+  assert.equal(row.source_cells.length, 4);
+  assert.equal(row.source_cells[1].extracted.status, "missing");
+  assert.ok(row.source_cells.every((cell) => cell.extracted.provenance?.source_ref));
+  assert.equal(row.row_status, "extracted");
 });
 
 test("provenance gaps, unavailable sources and low OCR confidence force review", async () => {
   const parsed = {
     document_id: "provenance-audit", title: "Договор", source_extension: ".txt",
     parts: [
+      { kind: "paragraph", id: "contract-type", text: "Договор поставки № Д-1", provenance: [{ source_ref: "#/parts/0", source_text: "Договор поставки № Д-1" }] },
       { kind: "paragraph", id: "unlocated", text: "Номер договора: Д-1", _synthetic: true },
       { kind: "paragraph", id: "unavailable", text: "Дата договора: 01.03.2026", source_available: false, provenance: [{ source_ref: "#/parts/1", source_text: "Дата договора: 01.03.2026" }] },
       { kind: "paragraph", id: "low-ocr", text: "Цена договора: 10 000 руб.", confidence: 0.4, provenance: [{ source_ref: "#/parts/2", source_text: "Цена договора: 10 000 руб.", confidence: 0.4 }] },
@@ -167,6 +204,48 @@ test("compare reports addendum value changes, missing data and changed provenanc
   provenance.changes[0].reason = { ...provenance.changes[0].reason, provenance: { ...provenance.changes[0].reason.provenance, source_ref: "#/parts/404" } };
   const provenanceCompare = compareExtractionResults(rules, provenance);
   assert.ok(provenanceCompare.discrepancies.some((item) => item.path === "changes.addendum-changes-r001" && item.differing_fields.includes("reason")));
+});
+
+test("Compare counts each addendum change once and reports its value, missing data and provenance differences", async () => {
+  const parsed = await parserResult("addendum-2026-04");
+  const rules = extractStructuredDocument(parsed, { extractionId: "compare-addendum-rules" });
+  const same = compareExtractionResults(rules, structuredClone(rules));
+  assert.deepEqual(same.counts, { matches: 11, discrepancies: 0, rules_only: 0, llm_only: 0 });
+  assert.equal(same.matches.filter((item) => item.path === "changes.addendum-changes-r001").length, 1);
+  assert.equal(same.matches.some((item) => item.path === "rows.addendum-changes-r001"), false);
+
+  const changed = structuredClone(rules);
+  changed.changes[0].new_value = { ...changed.changes[0].new_value, source_value: "5 400 000,00 руб.", value: "5400000.00" };
+  const valueCompare = compareExtractionResults(rules, changed);
+  assert.deepEqual(valueCompare.counts, { matches: 10, discrepancies: 1, rules_only: 0, llm_only: 0 });
+  assert.deepEqual(valueCompare.discrepancies.map((item) => item.path), ["changes.addendum-changes-r001"]);
+
+  const missing = structuredClone(rules);
+  missing.changes[0].old_value = { ...missing.changes[0].old_value, value: null, source_value: null, status: "missing", provenance: null };
+  const missingCompare = compareExtractionResults(rules, missing);
+  assert.deepEqual(missingCompare.counts, { matches: 10, discrepancies: 1, rules_only: 0, llm_only: 0 });
+  assert.deepEqual(missingCompare.discrepancies[0].missing_fields, ["old_value"]);
+
+  const provenance = structuredClone(rules);
+  provenance.changes[0].reason = { ...provenance.changes[0].reason, provenance: { ...provenance.changes[0].reason.provenance, source_ref: "#/parts/404" } };
+  const provenanceCompare = compareExtractionResults(rules, provenance);
+  assert.deepEqual(provenanceCompare.counts, { matches: 10, discrepancies: 1, rules_only: 0, llm_only: 0 });
+  assert.deepEqual(provenanceCompare.discrepancies.map((item) => item.path), ["changes.addendum-changes-r001"]);
+});
+
+test("unavailable source elements are not deterministic extraction candidates", () => {
+  const parsed = {
+    document_id: "unavailable-candidate",
+    parts: [{ kind: "paragraph", id: "unavailable-contract", text: "Номер договора: Д-123", source_available: false, provenance: [{ source_ref: "#/parts/0", source_text: "Номер договора: Д-123" }] }],
+  };
+  const source = adaptDocumentParserResult(parsed);
+  assert.equal(source.elements[0].source_available, false);
+  const result = extractStructuredDocument(parsed, {
+    mode: "llm_assisted",
+    llm: { document_type: "contract", classification_confidence: 0.8, field_candidates: [{ field_key: "contract_number", source_element_id: source.elements[0].id, source_value: "Д-123", confidence: 1 }], table_mappings: [] },
+  });
+  assert.notEqual(result.fields.contract_number.status, "extracted");
+  assert.equal(result.fields.contract_number.value, null);
 });
 
 test("parser JSON importer shape checks distinguish parsed JSON from source files", async () => {

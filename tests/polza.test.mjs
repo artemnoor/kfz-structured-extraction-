@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
-import { callPolzaForExtraction, listPolzaModels, PolzaAiError } from "../lib/extraction/polza-ai.mjs";
+import { buildGroundedContext, callPolzaForExtraction, listPolzaModels, PolzaAiError } from "../lib/extraction/polza-ai.mjs";
+import { adaptDocumentParserResult } from "../lib/parser/document-parser-adapter.mjs";
+import { extractStructuredDocument } from "../lib/extraction/structured-extraction.mjs";
 
 const fixture = (name) => readFile(new URL(`./fixtures/${name}`, import.meta.url), "utf8").then(JSON.parse);
 const okResponse = (value) => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(value) } }] }), { status: 200, headers: { "content-type": "application/json" } });
@@ -67,4 +69,64 @@ test("Polza models endpoint requests the model catalog without exposing the API 
   });
   assert.deepEqual(request, { url: "https://polza.ai/api/v1/models", method: "GET", authorization: "Bearer unit-test-key" });
   assert.equal(models[0].id, "deepseek/deepseek-v4-flash");
+});
+
+test("unavailable source text stays out of Polza context and cannot ground an extracted value", async () => {
+  const privateText = "Номер договора: Д-UNAVAILABLE";
+  const parsed = {
+    document_id: "unavailable-polza-source",
+    title: "Документ без доступного первоисточника",
+    parts: [
+      { kind: "paragraph", id: "private-source-id", text: privateText, source_available: false, provenance: [{ source_ref: "#/parts/0", source_text: privateText }] },
+      { kind: "paragraph", id: "synthetic-source-id", text: "Синтетический пример: договор С-1", _synthetic: true, provenance: [{ source_ref: "#/parts/1", source_text: "Синтетический пример: договор С-1" }] },
+    ],
+    logical_tables: [{
+      id: "private-metadata",
+      caption: "Реквизиты",
+      role: "metadata",
+      headers: ["Реквизит", "Значение"],
+      rows: [{ row_id: "private-metadata-r001", cells: [
+        { id: "private-label", column: 0, text: "Номер договора", source_available: true },
+        { id: "private-value", column: 1, text: "Д-UNAVAILABLE", source_available: false, provenance: [{ source_ref: "#/logical_tables/0/rows/0/cells/1", source_text: "Д-UNAVAILABLE" }] },
+      ] }],
+    }],
+  };
+  const source = adaptDocumentParserResult(parsed);
+  const element = source.elements.find((item) => item.text === privateText);
+  assert.ok(element);
+  assert.equal(element.source_available, false);
+  const unavailableCell = source.tables[0].rows[0].cells[1];
+  assert.equal(unavailableCell.source_available, false);
+  assert.equal(unavailableCell.provenance.source_available, false);
+  assert.equal(source.elements.find((item) => item.text === "Синтетический пример: договор С-1")?.source_available, false);
+
+  const context = buildGroundedContext(parsed);
+  const serializedContext = JSON.stringify(context);
+  assert.equal(serializedContext.includes(privateText), false);
+  assert.equal(serializedContext.includes(element.id), false);
+  assert.equal(serializedContext.includes("private-source-id"), false);
+  assert.equal(serializedContext.includes("private-value"), false);
+
+  let outboundContent = "";
+  await assert.rejects(callPolzaForExtraction(parsed, {
+    POLZA_API_KEY: "unit-test-key",
+    POLZA_FETCH: async (_url, init) => {
+      outboundContent = JSON.parse(init.body).messages[1].content;
+      return okResponse({
+        document_type: "contract",
+        classification_confidence: 0.99,
+        field_candidates: [{ field_key: "contract_number", source_element_id: element.id, source_value: "Д-UNAVAILABLE", confidence: 1 }],
+        table_mappings: [],
+      });
+    },
+  }), (error) => error instanceof PolzaAiError && error.code === "POLZA_UNGROUNDED_OUTPUT");
+  assert.equal(outboundContent.includes(privateText), false);
+  assert.equal(outboundContent.includes(element.id), false);
+
+  const direct = extractStructuredDocument(parsed, {
+    mode: "llm_assisted",
+    llm: { document_type: "contract", classification_confidence: 0.99, field_candidates: [{ field_key: "contract_number", source_element_id: element.id, source_value: "Д-UNAVAILABLE", confidence: 1 }], table_mappings: [] },
+  });
+  assert.notEqual(direct.fields.contract_number.status, "extracted");
+  assert.equal(direct.fields.contract_number.value, null);
 });
