@@ -4,12 +4,14 @@ import { documents, extractionRuns } from "@/db/schema";
 import { demoDocumentRecord, demoParserResults } from "@/lib/parser/mock-document-parser";
 // @ts-ignore Cloudflare Worker appends the .mjs module to the server bundle.
 import { adaptDocumentParserResult } from "@/lib/parser/document-parser-adapter.mjs";
+// @ts-ignore Cloudflare Worker appends the .mjs module to the server bundle.
+import { selectMissingDemoDocuments } from "@/lib/storage-seeding.mjs";
 
 export async function ensureDemoDocuments() {
   const db = getDb();
-  const existing = await db.select({ id: documents.id }).from(documents).where(eq(documents.isDemo, true)).limit(1);
-  if (existing.length) return;
-  for (const parserJson of demoParserResults) {
+  const existing = await db.select({ id: documents.id }).from(documents).where(eq(documents.isDemo, true));
+  const missing = selectMissingDemoDocuments(demoParserResults, existing.map((row) => row.id));
+  for (const parserJson of missing) {
     const record = demoDocumentRecord(parserJson);
     await db.insert(documents).values(record).onConflictDoNothing();
   }
