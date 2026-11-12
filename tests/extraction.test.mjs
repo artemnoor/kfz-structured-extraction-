@@ -32,6 +32,20 @@ test("LLM-only classification preserves only valid model confidence and always r
   }
 });
 
+test("LLM-only classification with missing or invalid confidence passes the extraction schema as review", async () => {
+  const parsed = { document_id: "missing-llm-confidence", title: "Документ без распознанного типа", parts: [{ kind: "paragraph", text: "Стороны подтвердили взаимные обязательства" }] };
+  for (const confidence of [undefined, null, "0.84", -0.1, 1.01, Number.NaN]) {
+    const result = extractStructuredDocument(parsed, {
+      mode: "llm_assisted",
+      llm: { document_type: "contract", classification_confidence: confidence, field_candidates: [], table_mappings: [] },
+    });
+    assert.equal(result.classification.type, "contract");
+    assert.equal(result.classification.confidence, null);
+    assert.equal(result.classification.status, "review");
+    assert.equal(result.document_type, "contract");
+  }
+});
+
 test("date, currency and unit normalization keeps exact decimal strings", () => {
   assert.deepEqual(normalizeDate("31 марта 2026 г."), { value: "2026-03-31", status: "extracted", note: null });
   assert.deepEqual(normalizeDate("04/05/2026"), { value: null, status: "review", note: "Порядок дня и месяца неоднозначен" });
@@ -157,18 +171,40 @@ test("partially populated addendum preserves all source cells and marks only abs
   const firstRow = parsed.logical_tables.find((table) => table.id === "addendum-changes").rows[0];
   firstRow.cells[1].text = "";
   firstRow.cells[1].provenance.source_text = "";
-  const result = extractStructuredDocument(parsed, { extractionId: "test-addendum-partial" });
-  const row = result.changes[0];
-  assert.equal(row.old_value.value, null);
-  assert.equal(row.old_value.source_value, null);
-  assert.equal(row.old_value.status, "missing");
-  assert.equal(row.parameter.source_value, "п. 2.1");
-  assert.equal(row.new_value.source_value, "5 214 600,00 руб.");
-  assert.equal(row.reason.source_value, "Дополнительный объём по приложению 1");
-  assert.equal(row.source_cells.length, 4);
-  assert.equal(row.source_cells[1].extracted.status, "missing");
-  assert.ok(row.source_cells.every((cell) => cell.extracted.provenance?.source_ref));
-  assert.equal(row.row_status, "extracted");
+  const llm = { document_type: "addendum", classification_confidence: 0.96, field_candidates: [], table_mappings: [] };
+  const rulesResult = extractStructuredDocument(parsed, { extractionId: "test-addendum-partial-rules", mode: "rules_only" });
+  const assistedResult = extractStructuredDocument(parsed, { extractionId: "test-addendum-partial-assisted", mode: "llm_assisted", llm });
+  const compareResult = extractStructuredDocument(parsed, { extractionId: "test-addendum-partial-compare", mode: "compare", llm });
+
+  for (const result of [rulesResult, assistedResult, compareResult]) {
+    const row = result.changes[0];
+    assert.equal(row.old_value.value, null);
+    assert.equal(row.old_value.source_value, null, "no value may be filled from model confidence or inference");
+    assert.equal(row.old_value.status, "missing");
+    assert.equal(row.parameter.source_value, "п. 2.1");
+    assert.equal(row.new_value.source_value, "5 214 600,00 руб.");
+    assert.equal(row.reason.source_value, "Дополнительный объём по приложению 1");
+    assert.equal(row.source_cells.length, 4);
+    assert.equal(row.source_cells[1].extracted.status, "missing");
+    assert.ok(row.source_cells.every((cell) => cell.extracted.provenance?.source_ref));
+    assert.equal(row.row_status, "review", `${result.mode} must not treat a partial amendment as fully extracted`);
+    assert.ok(result.missing_fields.includes(`changes.${row.row_id}.old_value`));
+    assert.ok(result.review_required.some((item) => item.path === `changes.${row.row_id}.old_value`));
+  }
+  const comparison = compareExtractionResults(rulesResult, compareResult);
+  assert.equal(comparison.matches.filter((item) => item.path === "changes.addendum-changes-r001").length, 1);
+  assert.deepEqual(comparison.counts, { matches: 11, discrepancies: 0, rules_only: 0, llm_only: 0 });
+
+  const allUnmappedInput = await parserResult("addendum-2026-04");
+  const allUnmappedTable = allUnmappedInput.logical_tables.find((table) => table.id === "addendum-changes");
+  allUnmappedTable.headers = ["Колонка А", "Колонка Б", "Колонка В", "Колонка Г"];
+  const allMissing = extractStructuredDocument(allUnmappedInput, { extractionId: "test-addendum-unmapped-row", mode: "rules_only" });
+  assert.equal(allMissing.changes[0].row_status, "review", "unmapped values are incomplete while original row data exists");
+  for (const key of ["parameter", "old_value", "new_value", "reason"]) {
+    assert.equal(allMissing.changes[0][key].status, "missing");
+    assert.ok(allMissing.missing_fields.includes(`changes.${allMissing.changes[0].row_id}.${key}`));
+    assert.ok(allMissing.review_required.some((item) => item.path === `changes.${allMissing.changes[0].row_id}.${key}`));
+  }
 });
 
 test("provenance gaps, unavailable sources and low OCR confidence force review", async () => {

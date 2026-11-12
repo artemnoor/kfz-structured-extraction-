@@ -246,7 +246,7 @@ test("grounded table mappings can map an unfamiliar native XLSX header and prese
   assert.equal(result.line_items[2].amount.provenance.cell_address, "C8");
 });
 
-test("provider absence and ungrounded output fail closed instead of pretending extraction succeeded", async () => {
+test("provider absence fails closed and ungrounded candidates are filtered before extraction", async () => {
   const parsed = await fixture("document-parser-native-pdf.analysis.json");
   await assert.rejects(callPolzaForExtraction(parsed, {}), (error) => error instanceof PolzaAiError && error.status === 503 && error.code === "POLZA_NOT_CONFIGURED");
   const invalidBinding = { POLZA_API_KEY: "unit-test-key", POLZA_FETCH: async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
@@ -254,5 +254,7 @@ test("provider absence and ungrounded output fail closed instead of pretending e
     field_candidates: [{ field_key: "act_number", source_element_id: "invented", source_value: "ADM-75", confidence: 1 }],
     table_mappings: [],
   }) } }] }), { status: 200 }) };
-  await assert.rejects(callPolzaForExtraction(parsed, invalidBinding), (error) => error instanceof PolzaAiError && error.code === "POLZA_UNGROUNDED_OUTPUT");
+  const filtered = await callPolzaForExtraction(parsed, invalidBinding);
+  assert.deepEqual(filtered.field_candidates, []);
+  assert.equal(filtered.validation_status, "strict_schema_grounded_candidates_filtered");
 });

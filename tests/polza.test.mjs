@@ -37,6 +37,18 @@ test("Polza JSON parsing accepts fenced output while preserving local schema val
   assert.deepEqual(llm.field_candidates, []);
 });
 
+test("Polza missing or invalid classification confidence is normalized to null for review", async () => {
+  const parsed = await fixture("document-parser-native-pdf.analysis.json");
+  for (const response of [
+    { document_type: "act", field_candidates: [], table_mappings: [] },
+    { document_type: "act", classification_confidence: 1.2, field_candidates: [], table_mappings: [] },
+    { document_type: "act", classification_confidence: "0.8", field_candidates: [], table_mappings: [] },
+  ]) {
+    const llm = await callPolzaForExtraction(parsed, { POLZA_API_KEY: "unit-test-key", POLZA_FETCH: async () => okResponse(response) });
+    assert.equal(llm.classification_confidence, null);
+  }
+});
+
 test("Polza maps authentication, balance, model, rate-limit and server errors", async () => {
   const parsed = await fixture("document-parser-native-pdf.analysis.json");
   const expected = [[401, 401, "POLZA_UNAUTHORIZED"], [402, 402, "POLZA_PAYMENT_REQUIRED"], [404, 404, "POLZA_MODEL_NOT_FOUND"], [429, 429, "POLZA_RATE_LIMITED"], [500, 502, "POLZA_UPSTREAM_ERROR"]];
@@ -108,7 +120,7 @@ test("unavailable source text stays out of Polza context and cannot ground an ex
   assert.equal(serializedContext.includes("private-value"), false);
 
   let outboundContent = "";
-  await assert.rejects(callPolzaForExtraction(parsed, {
+  const filtered = await callPolzaForExtraction(parsed, {
     POLZA_API_KEY: "unit-test-key",
     POLZA_FETCH: async (_url, init) => {
       outboundContent = JSON.parse(init.body).messages[1].content;
@@ -119,7 +131,9 @@ test("unavailable source text stays out of Polza context and cannot ground an ex
         table_mappings: [],
       });
     },
-  }), (error) => error instanceof PolzaAiError && error.code === "POLZA_UNGROUNDED_OUTPUT");
+  });
+  assert.deepEqual(filtered.field_candidates, []);
+  assert.match(filtered.validation_status, /candidates_filtered$/);
   assert.equal(outboundContent.includes(privateText), false);
   assert.equal(outboundContent.includes(element.id), false);
 
@@ -129,4 +143,57 @@ test("unavailable source text stays out of Polza context and cannot ground an ex
   });
   assert.notEqual(direct.fields.contract_number.status, "extracted");
   assert.equal(direct.fields.contract_number.value, null);
+});
+
+test("Polza table context preserves source column indexes when an earlier header is unavailable", async () => {
+  const parsed = {
+    document_id: "header-index-offset",
+    title: "Реестр выполненных работ",
+    source_extension: ".json",
+    logical_tables: [{
+      id: "offset-items",
+      caption: "Строки реестра",
+      role: "table",
+      headers: ["Скрытый заголовок", "Кол-во, шт.", "Наименование работы"],
+      header_cells: [
+        { id: "hidden-header", text: "Скрытый заголовок", source_available: false },
+        { id: "quantity-header", text: "Кол-во, шт.", source_available: true },
+        { id: "description-header", text: "Наименование работы", source_available: true },
+      ],
+      rows: [{ row_id: "offset-items-r001", cells: [
+        { id: "hidden-value", column: 0, text: "не использовать", source_available: false },
+        { id: "quantity-value", column: 1, text: "3", source_available: true },
+        { id: "description-value", column: 2, text: "Монтаж насосного оборудования", source_available: true },
+      ] }],
+    }],
+  };
+  const context = buildGroundedContext(parsed);
+  const contextTable = context.tables.find((table) => table.table_id === "offset-items");
+  assert.deepEqual(contextTable.headers.map(({ column_index, label }) => [column_index, label]), [
+    [1, "Кол-во, шт."],
+    [2, "Наименование работы"],
+  ]);
+  assert.equal(JSON.stringify(context).includes("hidden-header"), false);
+  assert.equal(JSON.stringify(context).includes("не использовать"), false);
+
+  const mappedColumns = contextTable.headers.map((header) => ({
+    source_element_id: header.source_element_id,
+    semantic_key: header.column_index === 1 ? "quantity" : "description",
+    label: header.label,
+    confidence: 0.97,
+  }));
+  const llm = await callPolzaForExtraction(parsed, {
+    POLZA_API_KEY: "unit-test-key",
+    POLZA_FETCH: async () => okResponse({
+      document_type: "registry",
+      classification_confidence: 0.97,
+      field_candidates: [],
+      table_mappings: [{ table_id: "offset-items", role: "line_items", confidence: 0.97, columns: mappedColumns }],
+    }),
+  });
+  const result = extractStructuredDocument(parsed, { mode: "llm_assisted", llm });
+  assert.equal(result.line_items[0].quantity.source_value, "3");
+  assert.equal(result.line_items[0].description.source_value, "Монтаж насосного оборудования");
+  assert.match(result.line_items[0].quantity.provenance.source_ref, /rows\/0\/cells\/1$/);
+  assert.match(result.line_items[0].description.provenance.source_ref, /rows\/0\/cells\/2$/);
 });
