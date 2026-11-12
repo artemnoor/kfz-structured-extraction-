@@ -9,17 +9,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type DocumentSummary = {
   id: string; title: string; file_name: string; format: string; is_demo: boolean;
-  page_count: number | null; latest_extraction: { id: string; version: number; document_type: string; created_at: string } | null;
+  page_count: number | null; is_synthetic?: boolean; input_version?: number; latest_run_status?: string | null; latest_extraction: { id: string; version: number; document_type: string; created_at: string; mode?: string } | null;
 };
 type Provenance = {
   document_id: string; source_part_id?: string; source_ref?: string; page_no?: number | null;
   sheet_name?: string | null; cell_address?: string | null; bbox?: { l: number; t: number; r: number; b: number; coord_origin?: string } | null;
   coordinate_origin?: string | null; page_size?: { width: number; height: number; unit: string } | null;
-  table_id?: string; row_id?: string; column_index?: number; source_text: string; confidence: number;
+  table_id?: string; row_id?: string; column_index?: number; source_text: string; confidence?: number | null;
 };
-type ExtractedValue = { label?: string; value: any; source_value: string | null; status: "extracted" | "review" | "missing"; confidence: number | null; provenance: Provenance | null; normalization_note?: string | null };
-type ParserTable = { id: string; caption: string; role: string; headers: string[]; rows: Array<{ row_id: string; page_no?: number | null; sheet_name?: string | null; cells: Array<{ id?: string; column: number; text: string; address?: string; bbox?: any; provenance?: any }> }> };
-type DocumentData = { id: string; title: string; file_name: string; format: string; is_demo: boolean; parser_json: any; parser_view?: any; latest_extraction: any; extraction_version: number };
+type ExtractedValue = { label?: string; value: any; source_value: string | null; status: "extracted" | "review" | "missing"; confidence: number | null; provenance: Provenance | null; normalization_note?: string | null; source_method?: string; conflict?: any };
+type ParserTable = { id: string; caption: string; role: string; headers: string[]; page_no?: number | null; rows: Array<{ row_id: string; page_no?: number | null; sheet_name?: string | null; cells: Array<{ id?: string; column: number; text: string; address?: string; bbox?: Provenance["bbox"]; provenance?: Provenance | null }> }> };
+type DocumentData = { id: string; title: string; file_name: string; format: string; is_demo: boolean; is_synthetic?: boolean; input_version: number; parser_json: any; parser_view?: any; latest_extraction: any; extraction_version: number; latest_run_status?: string | null; latest_run_error?: any };
 
 const typeLabels: Record<string, string> = { kfz_report: "Отчёт КФЗ", contract: "Договор", act: "Акт", invoice: "Счёт", addendum: "Доп. соглашение", registry: "Реестр" };
 const demoTypes: Record<string, string> = { "kfz-2026-q1": "kfz_report", "contract-2026-0315": "contract", "act-2026-0424": "act", "invoice-2026-0408": "invoice", "addendum-2026-04": "addendum", "registry-2026-04": "registry" };
@@ -45,7 +45,10 @@ function formatValue(value: any) {
     return unitLabels[value] ?? value;
   }
   if (typeof value === "number") return new Intl.NumberFormat("ru-RU").format(value);
-  if (typeof value === "object" && "amount" in value) return `${decimalDisplay(String(value.amount))} ₽`;
+  if (typeof value === "object" && "amount" in value) {
+    const currencySymbols: Record<string, string> = { RUB: "₽", EUR: "€", USD: "$", CNY: "CNY" };
+    return `${decimalDisplay(String(value.amount))}${value.currency ? ` ${currencySymbols[value.currency] ?? value.currency}` : ""}`;
+  }
   if (typeof value === "object" && "start" in value && "end" in value) return `${dateDisplay(value.start)} — ${dateDisplay(value.end)}`;
   return JSON.stringify(value);
 }
@@ -86,6 +89,11 @@ export default function Home() {
   const [currentPage, setCurrentPage] = useState(1);
   const [currentSheet, setCurrentSheet] = useState("Реестр");
   const [sourceTab, setSourceTab] = useState<"view" | "json">("view");
+  const [extractionMode, setExtractionMode] = useState<"rules_only" | "llm_assisted" | "compare">("llm_assisted");
+  const [llmReadiness, setLlmReadiness] = useState<any>(null);
+  const [userAuthenticated, setUserAuthenticated] = useState<boolean | null>(null);
+  const [history, setHistory] = useState<any[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
 
   const loadDocuments = useCallback(async (selectId?: string) => {
@@ -95,6 +103,7 @@ export default function Home() {
       const response = await fetch("/api/documents", { cache: "no-store" });
       const data: any = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Не удалось загрузить документы");
+      setUserAuthenticated(Boolean(data.user_authenticated));
       const list = [...(data.documents ?? [])].sort((a: DocumentSummary, b: DocumentSummary) => {
         const ai = demoOrder.indexOf(a.id); const bi = demoOrder.indexOf(b.id);
         if (ai >= 0 || bi >= 0) return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
@@ -122,12 +131,18 @@ export default function Home() {
       setCurrentPage(1);
       setCurrentSheet(data.document.parser_json?.workbook?.active_sheet ?? data.document.parser_view?.sheet_names?.[0] ?? "Реестр");
       setActiveTab("result");
+      const historyResponse = await fetch(`/api/documents/${encodeURIComponent(id)}/extractions`, { cache: "no-store" });
+      const historyData: any = await historyResponse.json();
+      setHistory(historyResponse.ok ? historyData.history ?? [] : []);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Ошибка открытия документа");
     }
   }, []);
 
   useEffect(() => { void loadDocuments(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    void fetch("/api/health", { cache: "no-store" }).then((response) => response.json()).then((data: any) => setLlmReadiness(data.llm ?? null)).catch(() => setLlmReadiness({ configured: false }));
+  }, []);
 
   const filteredDocuments = useMemo(() => {
     const q = search.trim().toLocaleLowerCase("ru-RU");
@@ -149,24 +164,29 @@ export default function Home() {
   const sourceElements: any[] = parserView?.elements ?? [];
   const sourceIsWorkbook = activeDocument?.format === "XLSX";
   const sourceHasPageNavigation = !sourceIsWorkbook && (activeDocument?.format === "PDF" || activeDocument?.format === "PPTX" || sourceElements.some((element) => Number.isFinite(element.provenance?.page_no)) || sourceTables.some((table) => Number.isFinite(table.page_no)));
-  const sourceRowsForTable = (table: ParserTable) => table.rows.filter((row) => sourceIsWorkbook ? row.sheet_name === currentSheet : sourceHasPageNavigation ? row.page_no === currentPage || row.page_no == null && (table as any).page_no === currentPage : true);
+  const sourceRowsForTable = (table: ParserTable) => table.rows.filter((row) => sourceIsWorkbook ? row.sheet_name === currentSheet : sourceHasPageNavigation ? row.page_no === currentPage || row.page_no == null && table.page_no === currentPage : true);
   const sourceTableIsVisible = (table: ParserTable) => sourceRowsForTable(table).length > 0;
   const sourcePage = parserView?.page_sizes?.[String(currentPage)] ?? parserView?.page_sizes?.[currentPage] ?? {};
   const sourcePageSize = sourcePage.size ?? sourcePage.unrotated_size ?? sourcePage;
   const sourcePageSizeLabel = sourcePageSize.width && sourcePageSize.height ? `${Math.round(sourcePageSize.width)} × ${Math.round(sourcePageSize.height)} pt` : "Размер не указан";
+  const llmAllowed = Boolean(activeDocument?.is_demo || activeDocument?.is_synthetic);
+  const modeLabels: Record<string, string> = { rules_only: "Rules Only", llm_assisted: "LLM Assisted", compare: "Compare" };
 
   const runExtraction = async () => {
     if (!selectedId) return;
     setExtracting(true);
     setError("");
     try {
-      const response = await fetch(`/api/documents/${encodeURIComponent(selectedId)}/extract`, { method: "POST" });
+      const response = await fetch(`/api/documents/${encodeURIComponent(selectedId)}/extract`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: extractionMode }) });
       const data: any = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Не удалось запустить извлечение");
+      if (!response.ok) throw new Error([data.error, data.code].filter(Boolean).join(" · ") || "Не удалось запустить извлечение");
       setActiveDocument((current) => current ? { ...current, latest_extraction: data.extraction, extraction_version: data.extraction.version } : current);
       setDocuments((items) => items.map((item) => item.id === selectedId ? { ...item, latest_extraction: { id: data.extraction.extraction_id, version: data.extraction.version, document_type: data.extraction.document_type, created_at: data.extraction.extracted_at } } : item));
+      const historyResponse = await fetch(`/api/documents/${encodeURIComponent(selectedId)}/extractions`, { cache: "no-store" });
+      const historyData: any = await historyResponse.json();
+      setHistory(historyResponse.ok ? historyData.history ?? [] : []);
       setActiveTab("result");
-      setNotice(`Извлечение v${data.extraction.version} сохранено в D1`);
+      setNotice(`${extractionMode === "compare" ? "Сравнение" : extractionMode === "rules_only" ? "Rules Only" : "LLM Assisted"} v${data.extraction.version} сохранено в D1`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Ошибка извлечения");
     } finally {
@@ -181,10 +201,11 @@ export default function Home() {
     setBusy(true);
     setError("");
     try {
+      const syntheticAcknowledged = window.confirm("Разрешить Workers AI обрабатывать импортированный JSON? Подтвердите только для синтетических или обезличенных данных. Если отказаться, документ будет доступен только в режиме Rules Only.");
       const parsedFiles = await Promise.all(selectedFiles.map(async (file) => ({ file, json: JSON.parse(await file.text()) })));
       const layoutItem = parsedFiles.find(({ json }) => json && typeof json === "object" && !json.document && !json.model_parts && json.pages && json.source && Array.isArray(json.parts));
       const parserItem = parsedFiles.find((item) => item !== layoutItem) ?? parsedFiles[0];
-      const response = await fetch("/api/parser-json", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ parser_json: parserItem.json, ...(layoutItem ? { layout_json: layoutItem.json } : {}), file_name: parserItem.file.name }) });
+      const response = await fetch("/api/parser-json", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ parser_json: parserItem.json, ...(layoutItem ? { layout_json: layoutItem.json } : {}), file_name: parserItem.file.name, synthetic_acknowledged: syntheticAcknowledged }) });
       const data: any = await response.json();
       if (!response.ok) throw new Error((data.details ?? [data.error]).filter(Boolean).join(" · "));
       await loadDocuments(data.document.id);
@@ -207,6 +228,14 @@ export default function Home() {
     window.setTimeout(() => document.getElementById("source-panel")?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 40);
   };
 
+  const comparisonProvenance = (item: any) => item.llm?.provenance ?? item.rules?.provenance ?? item.llm?.identifier?.provenance ?? item.rules?.identifier?.provenance ?? null;
+  const comparisonValue = (item: any, method: "rules" | "llm") => {
+    const value = item[method];
+    if (!value) return "—";
+    if (value.source_value !== undefined) return value.source_value ?? (value.value == null ? "—" : formatValue(value.value));
+    return [value.identifier?.source_value, value.description?.source_value, value.amount?.source_value].filter(Boolean).join(" · ") || "Строка найдена";
+  };
+
   const exportJson = async () => {
     if (!extraction) return;
     const content = JSON.stringify(extraction, null, 2);
@@ -227,6 +256,16 @@ export default function Home() {
     try { await navigator.clipboard.writeText(JSON.stringify(parserJson, null, 2)); setNotice("Структура парсера скопирована"); }
     catch { setNotice("Буфер обмена недоступен"); }
     window.setTimeout(() => setNotice(""), 3600);
+  };
+
+  const openExtractionVersion = async (id: string) => {
+    try {
+      const response = await fetch(`/api/extractions/${encodeURIComponent(id)}`, { cache: "no-store" });
+      const data: any = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Не удалось открыть версию");
+      setActiveDocument((current) => current ? { ...current, latest_extraction: data.extraction } : current);
+      setActiveTab("result");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Не удалось открыть версию извлечения"); }
   };
 
   const schemaSections = ["parts", "model_parts", "visual_layout", "logical_tables", "provenance", "document"];
@@ -268,7 +307,7 @@ export default function Home() {
       <main className="workspace-main">
         <header className="topbar">
           <div className="breadcrumb"><span>Рабочее пространство</span><ChevronRight size={14} /><strong>Structured Extraction</strong></div>
-          <div className="topbar-right"><span className="stage-pill"><span>ЭТАП 01</span> Извлечение</span><span className="user-dot">А</span></div>
+          <div className="topbar-right"><span className="stage-pill"><span>ЭТАП 01</span> Извлечение</span>{userAuthenticated ? <span className="user-dot" title="Вход подтверждён">А</span> : <a className="signin-link" href="/signin-with-chatgpt?return_to=%2F">Войти для сохранения</a>}</div>
         </header>
         <div className="main-scroll">
           <section className="page-heading">
@@ -278,12 +317,22 @@ export default function Home() {
 
           {error && <div className="alert error-alert"><AlertCircle size={17} /><span>{error}</span><button onClick={() => setError("")} aria-label="Скрыть ошибку"><X size={15} /></button></div>}
           {notice && <div className="toast-notice"><CheckCircle2 size={16} /> {notice}</div>}
+          {activeDocument?.latest_run_status === "failed" && !error && <div className="alert error-alert"><AlertCircle size={17} /><span>Последний запуск завершился ошибкой: {activeDocument.latest_run_error?.message ?? activeDocument.latest_run_error?.technical?.reason ?? "подробности доступны в истории"}</span></div>}
+
+          {activeDocument && <section className="mode-selector panel-card" aria-label="Режим извлечения">
+            <div className="mode-selector-heading"><div><span className="eyebrow">ОБРАБОТКА</span><h3>Режим извлечения</h3></div><span className={`llm-state ${llmReadiness?.configured ? "llm-state-ready" : "llm-state-off"}`}><span />Workers AI {llmReadiness?.configured ? "доступна по конфигурации" : "не настроена"}</span></div>
+            <div className="mode-options" role="radiogroup" aria-label="Режим Structured Extraction">
+              {(["rules_only", "llm_assisted", "compare"] as const).map((value) => <button key={value} role="radio" aria-checked={extractionMode === value} className={extractionMode === value ? "selected" : ""} onClick={() => setExtractionMode(value)}><strong>{modeLabels[value]}</strong><small>{value === "rules_only" ? "Только детерминированные правила" : value === "llm_assisted" ? "Правила + подтверждённые ответы LLM" : "Одинаковый JSON в обоих режимах"}</small></button>)}
+            </div>
+            <div className="mode-footnote"><span>Модель: {llmReadiness?.model ?? "@cf/meta/llama-3.3-70b-instruct-fp8-fast"}</span><span>{extractionMode !== "rules_only" && !llmAllowed ? "Для импортированного документа LLM отключена: требуется отметить данные синтетическими/обезличенными при импорте." : llmReadiness?.configured ? `Провайдер: ${llmReadiness.provider}` : "Rules Only работает без LLM. Для LLM нужны серверные CLOUDFLARE_ACCOUNT_ID и CLOUDFLARE_API_TOKEN."}</span></div>
+            {!userAuthenticated && <div className="auth-note">Запуск и сохранение результата требуют входа через ChatGPT. <a href="/signin-with-chatgpt?return_to=%2F">Войти</a></div>}
+          </section>}
 
           {activeDocument ? <>
             <section className="selected-document-card">
               <div className="selected-file-icon"><DocumentGlyph format={activeDocument.format} /></div>
               <div className="selected-file-info"><div className="selected-file-name"><h2>{activeDocument.title}</h2><span className={`demo-tag ${activeDocument.is_demo ? "" : "import-tag"}`}>{activeDocument.is_demo ? "ДЕМО-ДАННЫЕ" : "ИМПОРТ JSON"}</span></div><p><span>{activeDocument.file_name}</span><i />{activeDocument.format}{pageCount ? ` · ${activeDocument.format === "XLSX" ? `${sheetNames.length || pageCount} листа` : `${pageCount} страницы`}` : ""}<i /><span className="parser-version">{parserJson?.parser_output_version ?? parserJson?.analysis_version ?? "Parser JSON"}</span></p></div>
-              <div className="selected-file-actions"><span className={`classification-pill ${extraction ? "classified" : "waiting"}`}><span className="status-dot" />{extraction ? typeLabels[extraction.document_type] ?? extraction.document_type : "Тип ещё не определён"}</span><button className="primary-button" onClick={() => void runExtraction()} disabled={extracting}><RefreshCw className={extracting ? "spin" : ""} size={15} />{extracting ? "Извлекаю…" : extraction ? "Запустить снова" : "Запустить извлечение"}</button></div>
+              <div className="selected-file-actions"><span className={`classification-pill ${extraction ? "classified" : "waiting"}`}><span className="status-dot" />{extraction ? typeLabels[extraction.document_type] ?? extraction.document_type : "Тип ещё не определён"}</span><button className="primary-button" onClick={() => void runExtraction()} disabled={extracting || !userAuthenticated || (extractionMode !== "rules_only" && !llmAllowed)}><RefreshCw className={extracting ? "spin" : ""} size={15} />{extracting ? "Извлекаю…" : `Запустить ${modeLabels[extractionMode]}`}</button></div>
             </section>
 
             <div className="content-tabs-row">
@@ -292,11 +341,15 @@ export default function Home() {
                 <button className={activeTab === "parser" ? "active" : ""} onClick={() => setActiveTab("parser")}><Code2 size={15} /> Структура парсинга</button>
                 <button className={activeTab === "json" ? "active" : ""} onClick={() => setActiveTab("json")}><FileJson2 size={15} /> JSON</button>
               </div>
-              {extraction && <div className="extraction-meta"><Clock3 size={13} /> v{extraction.version} · {new Date(extraction.extracted_at).toLocaleString("ru-RU", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</div>}
+              <div className="extraction-meta-actions">{extraction && <div className="extraction-meta"><Clock3 size={13} /> v{extraction.version} · {modeLabels[extraction.mode] ?? extraction.mode ?? "извлечение"}{extraction.input_version !== activeDocument.input_version ? " · устаревшая версия входа" : ""}</div>}<button className="history-toggle" onClick={() => setHistoryOpen((open) => !open)}><Clock3 size={13} /> История {history.length ? `(${history.length})` : ""}</button></div>
             </div>
 
+            {extraction && <div className="execution-status"><span className={extraction.extraction_engine?.llm?.called ? "execution-live" : "execution-rules"}><span />{extraction.extraction_engine?.llm?.called ? `LLM вызвана · ${extraction.extraction_engine.llm.provider}` : "LLM не вызывалась · Rules"}</span><span>Проверка ответа: {extraction.extraction_engine?.llm?.validation_status ?? "не запускалась"}</span>{extraction.extraction_engine?.llm?.duration_ms != null && <span>{extraction.extraction_engine.llm.duration_ms} мс</span>}</div>}
+
+            {historyOpen && <section className="history-panel panel-card"><div className="panel-heading"><div><span className="eyebrow">ВЕРСИИ D1</span><h3>История извлечений</h3></div><span className="panel-caption">результат связан с версией входного JSON</span></div>{history.length ? <div className="history-list">{history.map((item) => <button key={item.id} className={`history-row ${item.status === "completed" ? "" : "history-failed"}`} onClick={() => item.status === "completed" && void openExtractionVersion(item.id)} disabled={item.status !== "completed"}><span><strong>v{item.version} · {modeLabels[item.mode] ?? item.mode}</strong><small>Вход v{item.input_version} · {new Date(item.created_at).toLocaleString("ru-RU", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}{item.error?.message ? ` · ${item.error.message}` : ""}</small></span><span className={`history-status ${item.status}`}>{item.status === "completed" ? "готово" : item.status === "running" ? "выполняется" : item.status === "stale" ? "устарело" : "ошибка"}</span></button>)}</div> : <div className="history-empty">История появится после первого запуска.</div>}</section>}
+
             {activeTab === "result" && !extraction && <section className="empty-result panel-card">
-              <div className="empty-icon"><ArrowLeftRight size={23} /></div><div><span className="eyebrow">ГОТОВЫЙ РЕЗУЛЬТАТ ПАРСЕРА</span><h3>Входные данные уже распознаны</h3><p>Этот шаг классифицирует документ, нормализует поля и сохраняет каждую ссылку на страницу или ячейку. OCR и разбор исходного файла не выполняются.</p><button className="primary-button" onClick={() => void runExtraction()} disabled={extracting}><RefreshCw className={extracting ? "spin" : ""} size={15} />{extracting ? "Извлекаю…" : "Запустить Structured Extraction"}</button></div>
+              <div className="empty-icon"><ArrowLeftRight size={23} /></div><div><span className="eyebrow">ГОТОВЫЙ РЕЗУЛЬТАТ ПАРСЕРА</span><h3>Входные данные уже распознаны</h3><p>Этот шаг классифицирует документ, нормализует поля и сохраняет каждую ссылку на страницу или ячейку. OCR и разбор исходного файла не выполняются.</p><button className="primary-button" onClick={() => void runExtraction()} disabled={extracting || !userAuthenticated || (extractionMode !== "rules_only" && !llmAllowed)}><RefreshCw className={extracting ? "spin" : ""} size={15} />{extracting ? "Извлекаю…" : `Запустить ${modeLabels[extractionMode]}`}</button></div>
             </section>}
 
             {activeTab === "result" && extraction && <>
@@ -314,6 +367,7 @@ export default function Home() {
                     <strong>{formatValue(value.value)}</strong>
                     <span className="field-source"><span>{value.source_value ? `В исходнике: ${value.source_value}` : "Значение отсутствует"}</span><LocationText provenance={value.provenance} /></span>
                     {value.status === "review" && <span className="field-note"><AlertTriangle size={12} /> {value.normalization_note ?? "Требует проверки"}</span>}
+                    {value.conflict && <span className="field-conflict"><span>Rules: {value.conflict.rules?.source_value ?? "—"}</span><span>LLM: {value.conflict.llm?.source_value ?? "—"}</span></span>}
                   </button>)}
                 </div>
               </section>
@@ -334,6 +388,11 @@ export default function Home() {
                 {extraction.tables?.filter((table: any) => table.role !== "line_items" && table.role !== "metadata").map((table: any) => <details className="source-table-details" key={table.id}><summary>{table.title}<ChevronDown size={14} /></summary><div className="raw-table-scroll"><table className="data-table compact-table"><thead><tr>{table.headers.map((header: string, i: number) => <th key={i}>{header}</th>)}</tr></thead><tbody>{table.rows.map((row: any) => <tr key={row.row_id}>{row.source_cells.map((cell: any, i: number) => <td key={i}><ValueLink value={cell.extracted} onClick={focusSource} /></td>)}</tr>)}</tbody></table></div></details>)}
               </section>}
 
+              {extraction.comparison && <section className="comparison-panel panel-card"><div className="panel-heading"><div><span className="eyebrow">RULES VS LLM ASSISTED</span><h3>Сравнение методов</h3></div></div><div className="comparison-counts"><span>Совпало <strong>{extraction.comparison.counts.matches}</strong></span><span>Расхождений <strong>{extraction.comparison.counts.discrepancies}</strong></span><span>Только Rules <strong>{extraction.comparison.counts.rules_only}</strong></span><span>Только LLM <strong>{extraction.comparison.counts.llm_only}</strong></span></div>
+                {extraction.comparison.discrepancies.slice(0, 8).map((item: any, index: number) => <button key={`diff-${item.path}-${index}`} className="comparison-row" onClick={() => focusSource(comparisonProvenance(item))}><strong>Расхождение · {item.path}</strong><span>Rules: {comparisonValue(item, "rules")}</span><span>LLM: {comparisonValue(item, "llm")}</span></button>)}
+                {extraction.comparison.rules_only.slice(0, 5).map((item: any, index: number) => <button key={`rules-${item.path}-${index}`} className="comparison-row comparison-only" onClick={() => focusSource(comparisonProvenance(item))}><strong>Только Rules · {item.path}</strong><span>{comparisonValue(item, "rules")}</span></button>)}
+                {extraction.comparison.llm_only.slice(0, 5).map((item: any, index: number) => <button key={`llm-${item.path}-${index}`} className="comparison-row comparison-only" onClick={() => focusSource(comparisonProvenance(item))}><strong>Только LLM · {item.path}</strong><span>{comparisonValue(item, "llm")}</span></button>)}
+                {extraction.comparison.matches.slice(0, 5).map((item: any, index: number) => <button key={`match-${item.path}-${index}`} className="comparison-row comparison-match" onClick={() => focusSource(comparisonProvenance(item))}><strong>Совпадение · {item.path}</strong><span>Rules: {comparisonValue(item, "rules")}</span><span>LLM: {comparisonValue(item, "llm")}</span></button>)}</section>}
               {extraction.review_required?.length > 0 && <section className="review-panel panel-card"><div className="panel-heading"><div><span className="eyebrow">КОНТРОЛЬ КАЧЕСТВА</span><h3>Значения для ручной проверки</h3></div><span className="review-count"><AlertTriangle size={13} /> {extraction.review_required.length}</span></div><div className="review-list">{extraction.review_required.slice(0, 8).map((item: any, i: number) => <button key={`${item.path}-${i}`} className="review-row" onClick={() => focusSource(item.provenance)}><span className="review-triangle"><AlertTriangle size={14} /></span><span><strong>{item.source_value ?? "Значение не распознано"}</strong><small>{item.path.replace(/^fields\./, "").replaceAll("_", " ")} · {item.reason}</small></span><LocationText provenance={item.provenance} /><ChevronRight size={14} /></button>)}{extraction.review_required.length > 8 && <div className="more-reviews">И ещё {extraction.review_required.length - 8} значений отмечены для проверки.</div>}</div></section>}
               {extraction.missing_fields?.length > 0 && <section className="missing-note"><CircleHelp size={15} /><span><strong>Пустые реквизиты не дополнены:</strong> {extraction.missing_fields.map((key: string) => extraction.fields?.[key]?.label ?? key).join(", ")}</span></section>}
             </>}
@@ -362,7 +421,7 @@ export default function Home() {
               return <div className="source-table-block" key={table.id}><div className="source-table-caption">{table.caption}</div><table className="source-document-table"><thead><tr>{table.headers.map((header, i) => <th key={i}>{header}</th>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.row_id}>{row.cells.map((cell, i) => {
                 const sourceId = cell.id ?? cell.provenance?.source_part_id;
                 const selected = Boolean(citation && ((citation.source_part_id && sourceId === citation.source_part_id) || (citation.cell_address && cell.address === citation.cell_address)));
-                return <td key={sourceId ?? i} className={selected ? "source-highlight" : ""} data-cell-id={sourceId}><button onClick={() => { const p = cell.provenance ?? { document_id: activeDocument?.id ?? "", source_part_id: sourceId, page_no: row.page_no ?? null, sheet_name: row.sheet_name ?? null, cell_address: cell.address ?? null, bbox: cell.bbox ?? null, source_text: cell.text, confidence: 0.9 }; setCitation(p); }} title="Перейти к источнику">{cell.text || <span className="empty-cell">—</span>}</button></td>;
+                return <td key={sourceId ?? i} className={selected ? "source-highlight" : ""} data-cell-id={sourceId}><button onClick={() => cell.provenance && setCitation(cell.provenance)} disabled={!cell.provenance} title={cell.provenance ? "Перейти к источнику" : "В результате парсера нет ссылки на эту ячейку"}>{cell.text || <span className="empty-cell">—</span>}</button></td>;
               })}</tr>)}</tbody></table></div>;
             })}
             {sourceElements.filter((element) => element.kind !== "cell" && (!sourceHasPageNavigation || element.provenance?.page_no === currentPage || element.provenance?.page_no == null) && element.text?.trim()).filter((element, index, all) => all.findIndex((candidate) => candidate.text === element.text && candidate.provenance?.page_no === element.provenance?.page_no) === index).map((element) => {
@@ -374,7 +433,7 @@ export default function Home() {
             {!sourceTables.some(sourceTableIsVisible) && !sourceElements.some((element) => element.kind !== "cell" && (!sourceHasPageNavigation || element.provenance?.page_no === currentPage || element.provenance?.page_no == null) && element.text?.trim()) && <div className="source-empty-page"><FileText size={25} /><strong>{sourceHasPageNavigation ? `Страница ${currentPage}` : activeDocument?.format === "XLSX" ? currentSheet : "Исходные фрагменты"}</strong><span>В подготовленном результате парсера нет структурированных таблиц или текста для этого представления.</span></div>}
             <div className="source-signatures"><span>Подготовленная копия</span><span>Без юридической силы</span></div>
           </div>
-          {citation && <div className="citation-card"><div className="citation-heading"><span className="citation-pin" /><strong>Источник значения</strong></div><p>«{citation.source_text || "Пустая ячейка"}»</p><div className="citation-meta"><LocationText provenance={citation} /><span>Уверенность {Math.round((citation.confidence ?? 0) * 100)}%</span></div>{citation.bbox && <small className="bbox-detail">PDF bbox: [{citation.bbox.l.toFixed(1)}, {citation.bbox.t.toFixed(1)}, {citation.bbox.r.toFixed(1)}, {citation.bbox.b.toFixed(1)}] pt · {citation.coordinate_origin ?? citation.bbox.coord_origin}</small>}</div>}
+          {citation && <div className="citation-card"><div className="citation-heading"><span className="citation-pin" /><strong>Источник значения</strong></div><p>«{citation.source_text || "Пустая ячейка"}»</p><div className="citation-meta"><LocationText provenance={citation} /><span>{citation.confidence == null ? "Уверенность не оценивалась" : `Уверенность ${Math.round(citation.confidence * 100)}%`}</span></div>{citation.bbox && <small className="bbox-detail">PDF bbox: [{citation.bbox.l.toFixed(1)}, {citation.bbox.t.toFixed(1)}, {citation.bbox.r.toFixed(1)}, {citation.bbox.b.toFixed(1)}] {citation.page_size?.unit ?? "координат"} · {citation.coordinate_origin ?? citation.bbox.coord_origin}</small>}</div>}
         </> : <div className="source-json-view"><pre>{JSON.stringify(parserJson, null, 2)}</pre></div>}
         <div className="source-panel-footer"><span><span className="live-dot" /> Источник синхронизирован</span><span><ShieldCheck size={13} /> Provenance</span></div>
       </aside>

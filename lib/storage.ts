@@ -1,10 +1,9 @@
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, or } from "drizzle-orm";
 import { getDb } from "@/db";
 import { documents, extractionRuns } from "@/db/schema";
 import { demoDocumentRecord, demoParserResults } from "@/lib/parser/mock-document-parser";
-// @ts-ignore Cloudflare Worker appends the .mjs module to the server bundle.
+import { sha256 } from "@/lib/security/hash.mjs";
 import { adaptDocumentParserResult } from "@/lib/parser/document-parser-adapter.mjs";
-// @ts-ignore Cloudflare Worker appends the .mjs module to the server bundle.
 import { selectMissingDemoDocuments } from "@/lib/storage-seeding.mjs";
 
 export async function ensureDemoDocuments() {
@@ -15,14 +14,21 @@ export async function ensureDemoDocuments() {
     const record = demoDocumentRecord(parserJson);
     await db.insert(documents).values(record).onConflictDoNothing();
   }
+  await db.update(documents).set({ isSynthetic: true }).where(and(eq(documents.isDemo, true), eq(documents.isSynthetic, false)));
 }
 
-export async function listDocuments() {
+export async function listDocuments(ownerId?: string | null) {
   const db = getDb();
-  const rows = await db.select().from(documents).orderBy(asc(documents.isDemo), desc(documents.updatedAt), asc(documents.title));
+  const visibility = ownerId ? or(eq(documents.isDemo, true), eq(documents.ownerId, ownerId)) : eq(documents.isDemo, true);
+  const rows = await db.select().from(documents).where(visibility).orderBy(asc(documents.isDemo), desc(documents.updatedAt), asc(documents.title));
   return Promise.all(rows.map(async (row) => {
-    const [latest] = await db.select().from(extractionRuns).where(eq(extractionRuns.documentId, row.id)).orderBy(desc(extractionRuns.version)).limit(1);
     const parser = JSON.parse(row.parserJson);
+    const inputHash = await sha256(row.parserJson);
+    const runOwnerScope = ownerId ? or(isNull(extractionRuns.ownerId), eq(extractionRuns.ownerId, ownerId)) : isNull(extractionRuns.ownerId);
+    const [[latest], [currentRun]] = await Promise.all([
+      db.select().from(extractionRuns).where(and(eq(extractionRuns.documentId, row.id), runOwnerScope)).orderBy(desc(extractionRuns.version)).limit(1),
+      db.select().from(extractionRuns).where(and(eq(extractionRuns.documentId, row.id), runOwnerScope, eq(extractionRuns.status, "completed"), eq(extractionRuns.inputHash, inputHash), eq(extractionRuns.inputVersion, row.inputVersion))).orderBy(desc(extractionRuns.version)).limit(1),
+    ]);
     const parserView = adaptDocumentParserResult(parser);
     return {
       id: row.id,
@@ -32,40 +38,60 @@ export async function listDocuments() {
       is_demo: Boolean(row.isDemo),
       parser_version: parser.parser_output_version ?? parser.analysis_version ?? "Document Parser",
       page_count: parserView.page_count,
-      latest_extraction: latest ? { id: latest.id, version: latest.version, document_type: latest.documentType, created_at: latest.createdAt } : null,
+      latest_extraction: currentRun ? { id: currentRun.id, version: currentRun.version, document_type: currentRun.documentType, created_at: currentRun.createdAt, mode: currentRun.mode } : null,
+      latest_run_status: latest?.status ?? null,
+      input_version: row.inputVersion,
+      is_synthetic: Boolean(row.isSynthetic),
       updated_at: row.updatedAt,
     };
   }));
 }
 
-export async function getDocument(id: string) {
+export async function getDocument(id: string, ownerId?: string | null) {
   const db = getDb();
-  const [row] = await db.select().from(documents).where(eq(documents.id, id)).limit(1);
+  const visibility = ownerId ? or(eq(documents.isDemo, true), eq(documents.ownerId, ownerId)) : eq(documents.isDemo, true);
+  const [row] = await db.select().from(documents).where(and(eq(documents.id, id), visibility)).limit(1);
   if (!row) return null;
-  const [latest] = await db.select().from(extractionRuns).where(eq(extractionRuns.documentId, id)).orderBy(desc(extractionRuns.version)).limit(1);
+  const parserJson = JSON.parse(row.parserJson);
+  const inputHash = await sha256(row.parserJson);
+  const [[latest], [currentRun]] = await Promise.all([
+    db.select().from(extractionRuns).where(and(eq(extractionRuns.documentId, id), ownerId ? or(isNull(extractionRuns.ownerId), eq(extractionRuns.ownerId, ownerId)) : isNull(extractionRuns.ownerId))).orderBy(desc(extractionRuns.version)).limit(1),
+    db.select().from(extractionRuns).where(and(eq(extractionRuns.documentId, id), ownerId ? or(isNull(extractionRuns.ownerId), eq(extractionRuns.ownerId, ownerId)) : isNull(extractionRuns.ownerId), eq(extractionRuns.status, "completed"), eq(extractionRuns.inputHash, inputHash), eq(extractionRuns.inputVersion, row.inputVersion))).orderBy(desc(extractionRuns.version)).limit(1),
+  ]);
   return {
     id: row.id,
     title: row.title,
     file_name: row.fileName,
     format: row.format,
     is_demo: Boolean(row.isDemo),
-    parser_json: JSON.parse(row.parserJson),
-    parser_view: adaptDocumentParserResult(JSON.parse(row.parserJson)),
-    latest_extraction: latest ? JSON.parse(latest.payload) : null,
-    extraction_version: latest?.version ?? 0,
+    is_synthetic: Boolean(row.isSynthetic),
+    owner_id: row.ownerId,
+    parser_json: parserJson,
+    parser_view: adaptDocumentParserResult(parserJson),
+    latest_extraction: currentRun ? JSON.parse(currentRun.payload) : null,
+    latest_run_status: latest?.status ?? null,
+    latest_run_error: latest?.error ? JSON.parse(latest.error) : null,
+    extraction_version: row.extractionVersion,
+    input_version: row.inputVersion,
+    input_hash: inputHash,
   };
 }
 
-export async function getExtractionHistory(documentId: string) {
+export async function getExtractionHistory(documentId: string, ownerId?: string | null) {
   const db = getDb();
-  const rows = await db.select({ id: extractionRuns.id, version: extractionRuns.version, documentType: extractionRuns.documentType, schemaVersion: extractionRuns.schemaVersion, createdAt: extractionRuns.createdAt })
-    .from(extractionRuns).where(eq(extractionRuns.documentId, documentId)).orderBy(desc(extractionRuns.version));
-  return rows.map((row) => ({ id: row.id, version: row.version, document_type: row.documentType, schema_version: row.schemaVersion, created_at: row.createdAt }));
+  const runOwnerScope = ownerId ? or(isNull(extractionRuns.ownerId), eq(extractionRuns.ownerId, ownerId)) : isNull(extractionRuns.ownerId);
+  const rows = await db.select({ id: extractionRuns.id, version: extractionRuns.version, documentType: extractionRuns.documentType, schemaVersion: extractionRuns.schemaVersion, inputVersion: extractionRuns.inputVersion, inputHash: extractionRuns.inputHash, mode: extractionRuns.mode, status: extractionRuns.status, model: extractionRuns.model, provider: extractionRuns.provider, error: extractionRuns.error, createdAt: extractionRuns.createdAt })
+    .from(extractionRuns).where(and(eq(extractionRuns.documentId, documentId), runOwnerScope)).orderBy(desc(extractionRuns.version));
+  return rows.map((row) => ({ id: row.id, version: row.version, document_type: row.documentType, schema_version: row.schemaVersion, input_version: row.inputVersion, input_hash: row.inputHash, mode: row.mode, status: row.status, model: row.model, provider: row.provider, error: row.error ? JSON.parse(row.error) : null, created_at: row.createdAt }));
 }
 
-export async function getExtraction(extractionId: string) {
+export async function getExtraction(extractionId: string, ownerId?: string | null) {
   const db = getDb();
-  const [row] = await db.select().from(extractionRuns).where(eq(extractionRuns.id, extractionId)).limit(1);
+  const visibility = ownerId ? or(eq(documents.isDemo, true), eq(documents.ownerId, ownerId)) : eq(documents.isDemo, true);
+  const runOwnerScope = ownerId ? or(isNull(extractionRuns.ownerId), eq(extractionRuns.ownerId, ownerId)) : isNull(extractionRuns.ownerId);
+  const [row] = await db.select({ payload: extractionRuns.payload }).from(extractionRuns)
+    .innerJoin(documents, eq(extractionRuns.documentId, documents.id))
+    .where(and(eq(extractionRuns.id, extractionId), visibility, runOwnerScope)).limit(1);
   return row ? JSON.parse(row.payload) : null;
 }
 

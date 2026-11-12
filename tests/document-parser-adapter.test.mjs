@@ -38,6 +38,23 @@ test("native Document Parser XLSX JSON preserves cell addresses, merges, formula
   assert.ok(doclingView.tables[0].headers.some(Boolean));
 });
 
+test("authentic Document Parser DOCX JSON preserves paragraphs, table rows and JSON-path provenance", async () => {
+  const parsed = await fixture("document-parser-native-docx.analysis.json");
+  const view = adaptDocumentParserResult(parsed);
+  assert.deepEqual(parserInputShapeErrors(parsed), []);
+  assert.equal(view.format, "DOCX");
+  assert.ok(view.elements.some((element) => element.text === "Дата: 10.04.2026"));
+  const table = view.tables.find((item) => item.headers.includes("Сумма, руб."));
+  assert.ok(table);
+  assert.deepEqual(table.headers, ["Основание", "Сумма, руб."]);
+  assert.equal(table.rows.length, 1);
+  const amount = table.rows[0].cells[1];
+  assert.equal(amount.text, "270 000,00");
+  assert.match(amount.provenance.source_ref, /#\/parts\/6\/rows\/1\/1$/);
+  assert.equal(amount.provenance.confidence, null);
+  assert.equal(view.elements.find((element) => element.text === "Дата: 10.04.2026").provenance.confidence, null);
+});
+
 test("native PDF analysis plus separate visual layout JSON keeps exact provenance and coordinate transforms", async () => {
   const [analysis, layout] = await Promise.all([
     fixture("document-parser-native-pdf.analysis.json"),
@@ -111,6 +128,35 @@ test("logical tables, fragments and values accept object-valued parser structure
   assert.ok(view.elements.find((element) => element.text.includes("Период:")).provenance.bbox);
 });
 
+test("logical table fragments preserve multi-page rows, repeated headers and multi-level headers", () => {
+  const parsed = {
+    document_id: "logical-multipage",
+    source_extension: ".pdf",
+    parts: [{ kind: "paragraph", text: "Отчёт КФЗ" }],
+    logical_tables: [{
+      id: "items",
+      caption: "Расшифровка показателей",
+      headers: [["", "Работа / показатель", "Финансовый показатель"], ["Код", "Наименование", "Сумма, руб."]],
+      fragments: [
+        { page_no: 1, rows: [{ values: ["01", "Калибровка", "12 000,00"], page_no: 1 }] },
+        { page_no: 2, rows: [
+          { values: ["Код", "Работа / показатель · Наименование", "Финансовый показатель · Сумма, руб."], page_no: 2 },
+          { values: ["02", "Поверка", "8 500,00"], page_no: 2 },
+        ] },
+      ],
+    }],
+  };
+  const view = adaptDocumentParserResult(parsed);
+  assert.deepEqual(view.tables[0].headers, ["Код", "Работа / показатель · Наименование", "Финансовый показатель · Сумма, руб."]);
+  assert.equal(view.tables[0].rows.length, 3);
+  assert.deepEqual(view.tables[0].rows.map((row) => row.page_no), [1, 2, 2]);
+  assert.match(view.tables[0].rows[0].cells[1].provenance.source_ref, /#\/logical_tables\/0\/fragments\/0\/rows\/0\/values\/1$/);
+  const extraction = extractStructuredDocument(parsed, { extractionId: "logical-multipage-test", mode: "rules_only" });
+  assert.equal(extraction.line_items.length, 2);
+  assert.equal(extraction.tables[0].repeated_header_rows.length, 1);
+  assert.equal(extraction.line_items[1].identifier.provenance.page_no, 2);
+});
+
 test("extraction calls Workers AI, validates JSON Schema and grounds returned IDs to native PDF source", async () => {
   const [analysis, layout] = await Promise.all([
     fixture("document-parser-native-pdf.analysis.json"),
@@ -157,7 +203,8 @@ test("extraction calls Workers AI, validates JSON Schema and grounds returned ID
   assert.equal(result.fields.act_date.provenance.page_no, 1);
   assert.ok(result.fields.act_date.provenance.bbox);
   assert.equal(result.fields.contractor_representative.source_value, "ООО «ДокКонтур Эпсилон»");
-  assert.equal(result.fields.contractor_representative.status, "review");
+  // Model self-confidence is not evidence; the exact source substring is grounded and the parser confidence is high.
+  assert.equal(result.fields.contractor_representative.status, "extracted");
 });
 
 test("grounded table mappings can map an unfamiliar native XLSX header and preserve every source column", async () => {

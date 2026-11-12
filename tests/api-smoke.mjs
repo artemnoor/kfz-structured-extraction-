@@ -2,56 +2,36 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const baseUrl = process.env.BASE_URL ?? "http://127.0.0.1:4173";
-const getJson = async (path) => {
-  const response = await fetch(new URL(path, baseUrl));
-  const body = await response.json();
-  assert.ok(response.ok, `${path}: ${JSON.stringify(body)}`);
-  return body;
+const ownerA = { "oai-authenticated-user-id": "api-smoke-owner-a", "oai-authenticated-user-email": "owner-a@example.test" };
+const ownerB = { "oai-authenticated-user-id": "api-smoke-owner-b", "oai-authenticated-user-email": "owner-b@example.test" };
+const json = async (path, init = {}) => {
+  const response = await fetch(new URL(path, baseUrl), init);
+  return { response, body: await response.json() };
 };
 
-const health = await getJson("/api/health");
-assert.equal(health.storage, "Cloudflare D1");
+const health = await json("/api/health");
+assert.ok(health.response.ok, JSON.stringify(health.body));
+assert.equal(health.body.storage, "Cloudflare D1");
+assert.equal(typeof health.body.llm.configured, "boolean");
 
-const list = await getJson("/api/documents");
-assert.equal(list.storage, "Cloudflare D1");
-assert.ok(list.documents.length >= 6);
-const kfz = list.documents.find((document) => document.id === "kfz-2026-q1");
-assert.ok(kfz);
+const listing = await json("/api/documents");
+assert.ok(listing.response.ok, JSON.stringify(listing.body));
+assert.equal(listing.body.storage, "Cloudflare D1");
+assert.ok(listing.body.documents.length >= 6);
+assert.ok(listing.body.documents.every((document) => document.is_demo));
+const demo = listing.body.documents.find((document) => document.id === "kfz-2026-q1");
+assert.ok(demo);
+const demoDetail = await json(`/api/documents/${encodeURIComponent(demo.id)}`);
+assert.equal(demoDetail.response.status, 200);
+assert.equal(demoDetail.body.document.parser_json.document_id, demo.id);
 
-const before = await getJson(`/api/documents/${encodeURIComponent(kfz.id)}`);
-assert.equal(before.document.parser_json.document_id, kfz.id);
-assert.equal(before.document.parser_json.logical_tables.find((table) => table.id === "kfz-items").rows.length, 18);
-
-const existingVersion = before.document.extraction_version ?? 0;
-const firstResponse = await fetch(new URL(`/api/documents/${encodeURIComponent(kfz.id)}/extract`, baseUrl), { method: "POST" });
-const first = await firstResponse.json();
-if (firstResponse.status === 201) {
-  assert.equal(first.extraction.version, existingVersion + 1);
-  assert.equal(first.extraction.line_items.length, 18);
-  assert.equal(first.extraction.extraction_engine.llm.called, true);
-
-  const secondResponse = await fetch(new URL(`/api/documents/${encodeURIComponent(kfz.id)}/extract`, baseUrl), { method: "POST" });
-  const second = await secondResponse.json();
-  assert.equal(secondResponse.status, 201, JSON.stringify(second));
-  assert.equal(second.extraction.version, existingVersion + 2);
-
-  const reloaded = await getJson(`/api/documents/${encodeURIComponent(kfz.id)}`);
-  assert.equal(reloaded.document.extraction_version, existingVersion + 2);
-  assert.equal(reloaded.document.latest_extraction.extraction_id, second.extraction.extraction_id);
-  const history = await getJson(`/api/documents/${encodeURIComponent(kfz.id)}/extractions`);
-  assert.ok(history.history.some((entry) => entry.id === first.extraction.extraction_id));
-  assert.ok(history.history.some((entry) => entry.id === second.extraction.extraction_id));
-  const stored = await getJson(`/api/extractions/${encodeURIComponent(second.extraction.extraction_id)}`);
-  assert.equal(stored.extraction.document_id, kfz.id);
-} else {
-  assert.ok([502, 503].includes(firstResponse.status), JSON.stringify(first));
-  assert.match(first.code ?? "", /^WORKERS_AI_/);
-  const unchanged = await getJson(`/api/documents/${encodeURIComponent(kfz.id)}`);
-  assert.equal(unchanged.document.extraction_version ?? 0, existingVersion);
-}
+const unauthenticatedExtraction = await json(`/api/documents/${encodeURIComponent(demo.id)}/extract`, { method: "POST" });
+assert.equal(unauthenticatedExtraction.response.status, 401);
+const unauthenticatedImport = await json("/api/parser-json", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+assert.equal(unauthenticatedImport.response.status, 401);
 
 const rawFixture = JSON.parse(await readFile(new URL("../data/parser-results/invoice-2026-0408.json", import.meta.url), "utf8"));
-const importedId = `api-smoke-${Date.now()}`;
+const importedId = `api-smoke-${crypto.randomUUID()}`;
 function updateDocumentReferences(value) {
   if (!value || typeof value !== "object") return;
   for (const key of Object.keys(value)) {
@@ -64,26 +44,61 @@ rawFixture.document_id = importedId;
 rawFixture.document.name = importedId;
 rawFixture.title = "API smoke · подготовленный счёт";
 rawFixture.file_name = `${importedId}.json`;
-const importResponse = await fetch(new URL("/api/parser-json", baseUrl), {
-  method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ parser_json: rawFixture }),
+const importDoc = async (parserJson, headers = ownerA) => json("/api/parser-json", {
+  method: "POST",
+  headers: { ...headers, "content-type": "application/json" },
+  body: JSON.stringify({ parser_json: parserJson, synthetic_acknowledged: true }),
 });
-const imported = await importResponse.json();
-assert.equal(importResponse.status, 201, JSON.stringify(imported));
-const importedDoc = await getJson(`/api/documents/${encodeURIComponent(importedId)}`);
-assert.equal(importedDoc.document.is_demo, false);
-assert.equal(importedDoc.document.parser_json.document_id, importedId);
-const importedExtractionResponse = await fetch(new URL(`/api/documents/${encodeURIComponent(importedId)}/extract`, baseUrl), { method: "POST" });
-const importedExtraction = await importedExtractionResponse.json();
-if (importedExtractionResponse.status === 201) {
-  assert.equal(importedExtraction.extraction.document_type, "invoice");
-  assert.equal(importedExtraction.extraction.extraction_engine.llm.called, true);
-} else {
-  assert.ok([502, 503].includes(importedExtractionResponse.status), JSON.stringify(importedExtraction));
-  assert.match(importedExtraction.code ?? "", /^WORKERS_AI_/);
-  const unchanged = await getJson(`/api/documents/${encodeURIComponent(importedId)}`);
-  assert.equal(unchanged.document.extraction_version ?? 0, 0);
-}
 
-console.log(firstResponse.status === 201
-  ? "API smoke passed: D1 read/write, real Workers AI extraction, version history, reload, parser JSON import, and imported-document extraction."
-  : "API smoke passed: D1 read/write and parser JSON import; extraction fails closed because Workers AI is not reachable in this environment.");
+const imported = await importDoc(rawFixture);
+assert.equal(imported.response.status, 201, JSON.stringify(imported.body));
+assert.equal(imported.body.document.input_version, 1);
+const saved = await json(`/api/documents/${encodeURIComponent(importedId)}`, { headers: ownerA });
+assert.equal(saved.response.status, 200);
+assert.equal(saved.body.document.is_synthetic, true);
+
+const extraction = await json(`/api/documents/${encodeURIComponent(importedId)}/extract`, {
+  method: "POST", headers: { ...ownerA, "content-type": "application/json" }, body: JSON.stringify({ mode: "rules_only" }),
+});
+assert.equal(extraction.response.status, 201, JSON.stringify(extraction.body));
+assert.equal(extraction.body.extraction.document_type, "invoice");
+assert.equal(extraction.body.extraction.extraction_engine.llm.called, false);
+assert.equal(extraction.body.extraction.input_version, 1);
+
+const extractionId = extraction.body.extraction.extraction_id;
+const outsiderDocument = await json(`/api/documents/${encodeURIComponent(importedId)}`, { headers: ownerB });
+assert.equal(outsiderDocument.response.status, 404);
+const outsiderHistory = await json(`/api/documents/${encodeURIComponent(importedId)}/extractions`, { headers: ownerB });
+assert.equal(outsiderHistory.response.status, 404);
+const outsiderExtraction = await json(`/api/extractions/${encodeURIComponent(extractionId)}`, { headers: ownerB });
+assert.equal(outsiderExtraction.response.status, 404);
+const outsiderImportCollision = await importDoc(rawFixture, ownerB);
+assert.equal(outsiderImportCollision.response.status, 409);
+
+const unchangedImport = await importDoc(rawFixture);
+assert.equal(unchangedImport.response.status, 200);
+assert.equal(unchangedImport.body.document.input_version, 1);
+
+const changedFixture = structuredClone(rawFixture);
+changedFixture.parts.push({ kind: "paragraph", id: "new-source", text: "Дополнительный исходный фрагмент" });
+const changedImport = await importDoc(changedFixture);
+assert.equal(changedImport.response.status, 200);
+assert.equal(changedImport.body.document.input_version, 2);
+const afterChange = await json(`/api/documents/${encodeURIComponent(importedId)}`, { headers: ownerA });
+assert.equal(afterChange.body.document.latest_extraction, null, "old extraction must not be reported as current after source version changes");
+
+const reExtraction = await json(`/api/documents/${encodeURIComponent(importedId)}/extract`, {
+  method: "POST", headers: { ...ownerA, "content-type": "application/json" }, body: JSON.stringify({ mode: "rules_only" }),
+});
+assert.equal(reExtraction.response.status, 201, JSON.stringify(reExtraction.body));
+assert.equal(reExtraction.body.extraction.version, extraction.body.extraction.version + 1);
+assert.equal(reExtraction.body.extraction.input_version, 2);
+const history = await json(`/api/documents/${encodeURIComponent(importedId)}/extractions`, { headers: ownerA });
+assert.equal(history.response.status, 200);
+assert.ok(history.body.history.some((run) => run.input_version === 1));
+assert.ok(history.body.history.some((run) => run.input_version === 2));
+const stored = await json(`/api/extractions/${encodeURIComponent(reExtraction.body.extraction.extraction_id)}`, { headers: ownerA });
+assert.equal(stored.response.status, 200);
+assert.equal(stored.body.extraction.document_id, importedId);
+
+console.log("API smoke passed: D1 persistence, authenticated owner scope (local trusted-header fixture), import versioning, stale-result invalidation, rules-only rerun, history reload, and anonymous write denial. Workers AI configuration reported:", health.body.llm.configured ? "configured" : "not configured");

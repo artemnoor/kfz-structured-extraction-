@@ -5,15 +5,18 @@ import invoice from "../../data/parser-results/invoice-2026-0408.json";
 import addendum from "../../data/parser-results/addendum-2026-04.json";
 import registry from "../../data/parser-results/registry-2026-04.json";
 
-export const demoParserResults = [kfz, contract, act, invoice, addendum, registry];
+export const demoParserResults: Array<Record<string, unknown>> = [kfz, contract, act, invoice, addendum, registry];
 
-export function demoDocumentRecord(parserJson: Record<string, any>) {
+export function demoDocumentRecord(parserJson: Record<string, unknown>) {
   return {
     id: String(parserJson.document_id),
     title: String(parserJson.title ?? parserJson.file_name ?? parserJson.document_id),
-    fileName: String(parserJson.file_name ?? parserJson.document?.origin?.filename ?? `${parserJson.document_id}.json`),
+    fileName: String(parserJson.file_name ?? `${parserJson.document_id}.json`),
     format: String(parserJson.format ?? parserJson.source_extension ?? "JSON").replace(/^\./, "").toUpperCase(),
     isDemo: true,
+    isSynthetic: true,
+    inputVersion: 1,
+    extractionVersion: 0,
     parserJson: JSON.stringify(parserJson),
   };
 }

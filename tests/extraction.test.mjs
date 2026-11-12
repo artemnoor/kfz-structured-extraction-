@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { demoBlueprints } from "../data/demo-blueprints.mjs";
-import { classifyDocument, extractStructuredDocument, normalizeDate, normalizeMoney, normalizeUnit, parserJsonShapeErrors } from "../lib/extraction/structured-extraction.mjs";
+import { classifyDocument, compareExtractionResults, extractStructuredDocument, normalizeDate, normalizeMoney, normalizeUnit, parserJsonShapeErrors } from "../lib/extraction/structured-extraction.mjs";
 
 async function parserResult(id) {
   return JSON.parse(await readFile(new URL(`../data/parser-results/${id}.json`, import.meta.url), "utf8"));
@@ -26,6 +26,49 @@ test("date, currency and unit normalization keeps exact decimal strings", () => 
   assert.equal(normalizeMoney("56 4?0,00 руб.").status, "review");
   assert.equal(normalizeUnit("чел.-ч").value, "person_hour");
   assert.equal(normalizeUnit("м³").value, "cubic_meter");
+  assert.equal(normalizeDate("31.02.2026").status, "review");
+  assert.equal(normalizeMoney("1234,56").status, "review");
+  assert.equal(normalizeMoney("1234,56").value.currency, null);
+  assert.equal(normalizeMoney("1234,56", "Сумма, руб.").value.currency, "RUB");
+  assert.equal(normalizeUnit("неизвестная единица").status, "review");
+});
+
+test("grounded rules and LLM candidates reconcile to review when evidence conflicts", async () => {
+  const parsed = await parserResult("kfz-2026-q1");
+  parsed.parts.push({ kind: "paragraph", id: "alternate-report-number", text: "КФЗ-02/2026" });
+  const source = (await import("../lib/parser/document-parser-adapter.mjs")).adaptDocumentParserResult(parsed);
+  const alternate = source.elements.find((element) => element.text === "КФЗ-02/2026");
+  const llm = {
+    document_type: "kfz_report",
+    field_candidates: [{ field_key: "report_number", source_element_id: alternate.id, source_value: "КФЗ-02/2026", confidence: 1 }],
+    table_mappings: [],
+  };
+  const rules = extractStructuredDocument(parsed, { extractionId: "rules", mode: "rules_only" });
+  const hybrid = extractStructuredDocument(parsed, { extractionId: "hybrid", mode: "llm_assisted", llm });
+  assert.equal(hybrid.fields.report_number.status, "review");
+  assert.equal(hybrid.fields.report_number.value, null);
+  assert.equal(hybrid.fields.report_number.conflict.rules.source_value, "КФЗ-01/2026");
+  assert.equal(hybrid.fields.report_number.conflict.llm.source_value, "КФЗ-02/2026");
+  assert.ok(hybrid.fields.report_number.conflict.rules.provenance);
+  assert.ok(hybrid.fields.report_number.conflict.llm.provenance);
+  const comparison = compareExtractionResults(rules, hybrid);
+  assert.ok(comparison.discrepancies.some((item) => item.path === "fields.report_number"));
+});
+
+test("LLM cannot turn a key-value metadata table into checked line items", async () => {
+  const parsed = await parserResult("kfz-2026-q1");
+  const source = (await import("../lib/parser/document-parser-adapter.mjs")).adaptDocumentParserResult(parsed);
+  const table = source.tables.find((item) => item.id === "document-metadata");
+  const mapping = {
+    table_id: table.id,
+    role: "line_items",
+    columns: table.header_cells.map((cell, index) => ({ source_element_id: cell.id, semantic_key: index === 0 ? "identifier" : "amount", label: table.headers[index], confidence: 1 })),
+  };
+  const result = extractStructuredDocument(parsed, { mode: "llm_assisted", llm: { document_type: "kfz_report", field_candidates: [], table_mappings: [mapping] } });
+  const metadata = result.tables.find((item) => item.id === table.id);
+  assert.equal(metadata.role, "metadata");
+  assert.equal(metadata.role_source, "rules_or_parser");
+  assert.equal(result.line_items.length, 18);
 });
 
 test("every KFS source row and all quantitative indicators are retained with provenance", async () => {

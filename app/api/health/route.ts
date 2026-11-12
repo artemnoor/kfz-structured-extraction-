@@ -1,5 +1,4 @@
 import { env } from "cloudflare:workers";
-// @ts-ignore Cloudflare Worker appends the .mjs module to the server bundle.
 import { workersAiReadiness } from "@/lib/extraction/workers-ai.mjs";
 
 export async function GET() {

@@ -58,6 +58,10 @@ export default defineConfig(async ({ command }) => {
       sites({ mockAuth: !managedLinux }),
       connectorPreview(),
       cloudflare({
+        // Keep the local Site preview self-contained. Production still receives
+        // its AI binding from the Worker config, while local checks use D1's
+        // persisted Miniflare database instead of requiring a Cloudflare login.
+        remoteBindings: false,
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
         inspectorPort: false,
         config: {
