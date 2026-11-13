@@ -1,11 +1,12 @@
 {
   "benchmark_version": 3,
   "generated_on": "2026-11-13",
-  "scope": "Rules Only rerun over 22 existing fresh local Parser outputs; independent manual source review of 5 originals; no corpus document sent to Polza.",
+  "scope": "Historical benchmark record for 22 Parser outputs; current checkout has six reproducible demo Parser JSONs. Independent review of five matched originals remains separately scored; 26 originals were inventoried locally, but no aligned Parser outputs are available for expanded scoring.",
   "ground_truth": {
     "classification": "Full-corpus classification is not scored. Five documents were adjudicated from original content and format without using filenames as labels.",
     "kfz": "Target row was visually checked in the original scanned page and cross-checked against a separate answer workbook; raw financial values withheld.",
-    "other_documents": "Five originals across PDF scan, native-text PDF, DOCX, and XLSX were manually checked. Metrics are scoped to checked fields/rows only."
+    "other_documents": "Five originals across PDF scan, native-text PDF, DOCX, and XLSX were manually checked. Metrics are scoped to checked fields/rows only.",
+    "additional_source_inventory": "26 local originals by format and content inspected locally. No filename used as type label. Accuracy is not scored for originals without matching Parser JSON and extraction output."
   },
   "document_parser": {
     "documents": 22,
@@ -13,7 +14,14 @@
     "errors": 0,
     "ocr_documents": 5,
     "parser_outputs_reused": true,
-    "ocr_rerun_for_rules_extraction": false
+    "ocr_rerun_for_rules_extraction": false,
+    "current_checkout": {
+      "available_parser_json_files": 6,
+      "all_marked_demo": true,
+      "rules_only_reproduced": 6,
+      "errors": 0,
+      "previous_22_document_record_reproducible": false
+    }
   },
   "structured_extraction": {
     "rules_only_processed": 22,
@@ -57,7 +65,8 @@
       "table_source_rows": 9,
       "adapter_body_rows": 4,
       "adapter_columns": 17,
-      "plan_fact_in_source": false
+      "plan_fact_in_source": false,
+      "record_status": "previously recorded independent extraction check; original page visually re-reviewed, matching Parser JSON/output not present in current checkout"
     },
     "sampled_documents": {
       "document_count": 5,
@@ -77,7 +86,8 @@
         "sheet_cell": 65
       },
       "kfz_target_values_with_page_bbox_source_ref": 15,
-      "status": "Accepted scalar values resolve to exact source text plus source ref, sheet/cell address, or page/bbox."
+      "status": "Accepted scalar values resolve to exact source text plus source ref, sheet/cell address, or page/bbox.",
+      "record_status": "183/183 is from the historical 22-document benchmark snapshot and was not recomputed in the current checkout"
     },
     "real_llm": {
       "provider": "polza_ai",
@@ -119,31 +129,31 @@
       "llm_assisted_current_run": {
         "status": "passed",
         "model": "google/gemma-4-26b-a4b-it",
-        "successful_completions": 1,
-        "duration_ms": 9481,
-        "usage_tokens": {
-          "prompt": 12739,
-          "completion": 857,
-          "total": 13596
+        "successful_completions": 5,
+        "latest_duration_ms": 13345,
+        "latest_usage_tokens": {
+          "prompt": 12740,
+          "completion": 1393,
+          "total": 14133
         },
         "schema_validated": true,
         "source_grounded": true,
-        "saved_to_local_d1_and_read_back": true
+        "d1_saved_and_read_back": true
       },
       "corpus_documents_sent": 0,
       "compare_current_run": {
         "status": "passed",
         "model": "google/gemma-4-26b-a4b-it",
-        "successful_completions": 1,
-        "duration_ms": 20963,
-        "usage_tokens": {
+        "successful_completions": 5,
+        "latest_duration_ms": 2781,
+        "latest_usage_tokens": {
           "prompt": 12740,
-          "completion": 1170,
-          "total": 13910
+          "completion": 863,
+          "total": 13603
         },
         "schema_validated": true,
         "source_grounded": true,
-        "saved_to_local_d1_and_read_back": true,
+        "d1_saved_and_read_back": true,
         "counts": {
           "matches": 27,
           "discrepancies": 2,
@@ -151,7 +161,149 @@
           "llm_only": 0
         },
         "conflicts_require_review": true
-      }
+      },
+      "verified_saved_completions": 10,
+      "verified_by_mode": {
+        "llm_assisted": 5,
+        "compare": 5
+      },
+      "all_verified_responses_schema_validated_and_grounded": true,
+      "records": [
+        {
+          "mode": "compare",
+          "duration_ms": 2781,
+          "usage_tokens": {
+            "prompt": 12740,
+            "completion": 863,
+            "total": 13603
+          },
+          "d1_saved_and_read_back": true
+        },
+        {
+          "mode": "llm_assisted",
+          "duration_ms": 13345,
+          "usage_tokens": {
+            "prompt": 12740,
+            "completion": 1393,
+            "total": 14133
+          },
+          "d1_saved_and_read_back": true
+        },
+        {
+          "mode": "compare",
+          "duration_ms": 6058,
+          "usage_tokens": {
+            "prompt": 12740,
+            "completion": 857,
+            "total": 13597
+          },
+          "d1_saved_and_read_back": true
+        },
+        {
+          "mode": "llm_assisted",
+          "duration_ms": 4531,
+          "usage_tokens": {
+            "prompt": 12740,
+            "completion": 1356,
+            "total": 14096
+          },
+          "d1_saved_and_read_back": true
+        },
+        {
+          "mode": "compare",
+          "duration_ms": 18405,
+          "usage_tokens": {
+            "prompt": 12740,
+            "completion": 1393,
+            "total": 14133
+          },
+          "d1_saved_and_read_back": true
+        },
+        {
+          "mode": "llm_assisted",
+          "duration_ms": 15212,
+          "usage_tokens": {
+            "prompt": 12740,
+            "completion": 857,
+            "total": 13597
+          },
+          "d1_saved_and_read_back": true
+        },
+        {
+          "mode": "compare",
+          "duration_ms": 20963,
+          "usage_tokens": {
+            "prompt": 12740,
+            "completion": 1170,
+            "total": 13910
+          },
+          "d1_saved_and_read_back": true
+        },
+        {
+          "mode": "llm_assisted",
+          "duration_ms": 9481,
+          "usage_tokens": {
+            "prompt": 12739,
+            "completion": 857,
+            "total": 13596
+          },
+          "d1_saved_and_read_back": true
+        },
+        {
+          "mode": "compare",
+          "duration_ms": 10874,
+          "usage_tokens": {
+            "prompt": 12740,
+            "completion": 857,
+            "total": 13597
+          },
+          "d1_saved_and_read_back": true
+        },
+        {
+          "mode": "llm_assisted",
+          "duration_ms": 9973,
+          "usage_tokens": {
+            "prompt": 12740,
+            "completion": 857,
+            "total": 13597
+          },
+          "d1_saved_and_read_back": true
+        }
+      ],
+      "latest_smoke": {
+        "status": "passed",
+        "model": "google/gemma-4-26b-a4b-it",
+        "successful_calls": 2,
+        "verified_calls_total": 10,
+        "failed_provider_calls": 0,
+        "pre_provider_http_429_attempts": 1,
+        "mode_counts": {
+          "llm_assisted": {
+            "duration_ms": 13345,
+            "prompt_tokens": 12740,
+            "completion_tokens": 1393,
+            "total_tokens": 14133
+          },
+          "compare": {
+            "duration_ms": 2781,
+            "prompt_tokens": 12740,
+            "completion_tokens": 863,
+            "total_tokens": 13603,
+            "counts": {
+              "matches": 27,
+              "discrepancies": 2,
+              "rules_only": 0,
+              "llm_only": 0
+            }
+          }
+        },
+        "schema_validation": true,
+        "source_grounding": true,
+        "provenance": true,
+        "d1_persist_and_readback": true,
+        "corpus_documents_sent": 0
+      },
+      "smoke_harness_issue": "Initial history assertion expected extraction_id; API history exposes id. Assertion corrected and full smoke passed."
     },
     "security": {
       "llm_allowlist_test": "PASS",
@@ -161,7 +313,79 @@
       "rerun_duplicate_tables_or_rows": false,
       "ambiguous_and_incomplete_values_review": true,
       "absent_values_null": true
-    }
+    },
+    "original_source_audit": {
+      "files": 26,
+      "formats": {
+        "pdf": 10,
+        "xlsx": 11,
+        "docx": 3,
+        "png": 1,
+        "txt": 1
+      },
+      "visually_reviewed_scanned_pdf_pages": 4,
+      "content_types_seen": [
+        "kfz_report",
+        "payroll_register",
+        "insurance_contribution",
+        "act",
+        "invoice_act",
+        "upd",
+        "service_memo",
+        "contract"
+      ],
+      "accuracy_scored_beyond_previous_five": false,
+      "reason": "Current checkout does not contain aligned Parser JSON/extraction outputs for these originals."
+    },
+    "xlsx_formula_source_check": {
+      "source_files_with_formulas": 5,
+      "formula_cells": 5,
+      "cached_values_missing": 5,
+      "address_in_each": "C8",
+      "outputs_available_for_these_original_workbooks": false,
+      "synthetic_regression": "PASS: missing cached result remains review/null with exact sheet/cell provenance"
+    },
+    "ocr_source_check": {
+      "visually_reviewed_scans": 4,
+      "local_tesseract_probe": true,
+      "production_document_parser_ocr_output_available": false,
+      "kfz_probe": {
+        "scale": 4,
+        "psm11_12_article_code_labels_detected": 5,
+        "article_code_labels_total": 5,
+        "person_month_unit_detected": true,
+        "target_2026_row_detected": false
+      },
+      "note": "Diagnostic Tesseract probe only; not a production Parser OCR score."
+    },
+    "browser_acceptance": {
+      "status": "PASS",
+      "document_selection": true,
+      "rules_only": true,
+      "llm_assisted": true,
+      "compare": true,
+      "conflicts_displayed": true,
+      "source_provenance_click_highlights_source": true
+    },
+    "test_stability": {
+      "api_smoke_fixed_synthetic_id": true,
+      "two_consecutive_runs_added_no_documents": true,
+      "legacy_uuid_test_rows_cleaned_from_local_d1": 13
+    },
+    "verdict": {
+      "status": "READY_WITH_LIMITATIONS",
+      "scope": "Pilot transition with manual review of review-status values",
+      "limitations": [
+        "Full-corpus independent accuracy remains unscored.",
+        "Only five matched originals have scored extraction outputs.",
+        "Current checkout lacks Parser JSON aligned to the additional 26 originals.",
+        "Production Document Parser OCR output for the inspected scan is unavailable for direct verification."
+      ],
+      "document_linking_started": false,
+      "production_deployment": false
+    },
+    "historical_22_document_record_reproducible": false,
+    "current_checkout_scored_originals": 5
   },
   "document_results": [
     {

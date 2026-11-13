@@ -12,7 +12,7 @@
 | --- | --- | --- |
 | `npm test` | PASS — 40/40 | Parser, provenance, extraction, Compare, confidence, Polza adapter, security, D1 seed. |
 | `npm run test:api` | PASS | Локальная D1, авторизация, импорт, версии входа, история и повторное чтение. |
-| `npm run test:polza` | PASS | Реальный `GET /models`, Compare-запрос к `deepseek/deepseek-v4-flash`, локальная валидация и сохранение/повторное чтение результата из D1. Тест завершился без `SKIP`. |
+| `npm run test:polza` | PASS (historical, before Gemma selection) | Earlier real Compare completion was recorded with DeepSeek. It is historical only; the current configuration and all new inference checks use Gemma. |
 | `npm run build` | PASS | Production build завершён. |
 | `npm run db:migrate:local` | PASS | Wrangler использовал только local resource; миграций к применению нет. |
 | `git diff --check` | PASS | Ошибок whitespace нет. |
@@ -57,7 +57,7 @@ Baseline выполнен на коде Structured Extraction `1e922e284805f2c1b
 | Строка КФЗ | PASS — 15/15 контрольных значений | Совпали с отдельной ручной разметкой; все значения имеют исходный текст, page 1, bbox и source ref. Строка остаётся `review` из-за пустого дополнительного поля. |
 | Формальная классификационная accuracy | NOT SCORED | Все 22 вывода совпали с исследовательскими метками индекса корпуса; метки не являются слепой независимой экспертной разметкой. |
 | `npm run test:api` | PASS | API, локальная D1, local sign-in, spoofed-header rejection, rules-only rerun, history readback и anonymous write denial. |
-| Реальный `GET /models` и Compare | PASS — 1 completion | `deepseek/deepseek-v4-flash`, ответ реально получен, проверен и сохранён/прочитан из локальной D1. Compare: 27 matches, 2 discrepancies, 1 llm-only. |
+| Earlier real Compare completion | Historical only | This record predates Gemma selection and is excluded from current model metrics. |
 | Отдельный API режим `llm_assisted` | BLOCKED — HTTP 429 | Локальная дневная demo-квота закончилась до обращения к провайдеру. Лимит не обходился; успешный inference этому запуску не приписан. |
 | `npm run test:polza` после расширения до двух режимов | FAIL — дневной лимит | Предыдущий одно-вызовный Compare smoke завершился PASS; следующая попытка отдельного режима `llm_assisted` была отклонена локальной квотой до inference. |
 | `npm run db:migrate:local` | PASS | Локальная база, миграций к применению нет; production D1 не затрагивалась. |
@@ -96,3 +96,21 @@ Baseline выполнен на коде Structured Extraction `1e922e284805f2c1b
 Compare counts: 27 совпадений, 2 расхождения, 0 только Rules Only, 0 только LLM. Конфликты остаются `review`/`null`. Первая попытка до штатного сброса завершилась HTTP 429 `AI_DAILY_LIMIT` до вызова провайдера. Первая попытка после сброса получила успешный Assisted completion, но завершилась на ошибочной проверке поля ID истории; проверка исправлена (D1 возвращает `id`), повторный полный smoke прошёл. Обход лимита не применялся.
 
 Итоговые повторные проверки: `npm test` PASS 47/47, `npm run test:api` PASS, `npm run test:polza` PASS, `npm run build` PASS, `npm run db:migrate:local` PASS (миграций нет), `git diff --check` PASS.
+
+## Приёмочная перепроверка — 2026-11-13
+
+Текущая LLM: только `google/gemma-4-26b-a4b-it` через Polza AI. Из локальной D1 прочитаны 10 успешных, schema-validated вызовов: 5 `llm_assisted` и 5 `compare`. Последний полный `npm run test:polza` завершился PASS: Assisted 13 345 ms, 14 133 токена; Compare 2 781 ms, 13 603 токена; 27 совпадений, 2 расхождения, 0 only-Rules и 0 only-LLM. Конфликты остаются review/null. Документы корпуса в API не отправлялись.
+
+| Проверка | Итог | Детали |
+|---|---|---|
+| `npm test` | PASS — 48/48 | Добавлена регрессия на формулу без cached value: review/null, provenance на XLSX C8. |
+| `npm run test:api` | PASS | D1 import/versioning, повторный запуск, история, анонимный доступ и spoofed identity. Фиксированный ID smoke документа: повторный запуск не увеличивает число документов. |
+| `npm run test:polza` | PASS | Два настоящих inference, Gemma, JSON Schema, grounding, provenance, конфликты и D1 readback. |
+| `npm run build` | PASS | Production build прошёл; остались диагностические предупреждения Vinext и Node. Deployment не запускался. |
+| `npm run db:migrate:local` | PASS | Локальная D1; новых миграций нет. |
+| `git diff --check` | PASS | Нет whitespace ошибок. |
+| Браузер (Playwright) | PASS | Выбор документа, все три режима, результат Compare, конфликт и переход к подсвеченному источнику. |
+
+Независимые extraction-метрики остаются ограничены пятью ранее сопоставленными оригиналами: тип 5/5, поля 14/14, нормализация 25/25. Исторический результат КФЗ — 15/15 по смыслу, колонке и provenance; оригинальная страница визуально перепроверена, но прежний Parser JSON/output отсутствует в текущем checkout, поэтому новый 15/15 end-to-end счёт не заявляется. Дополнительно инвентаризированы 26 исходных файлов (PDF/XLSX/DOCX/PNG/TXT), просмотрены четыре сканированные страницы и пять XLSX формул без cached values. Их Parser JSON/результатов извлечения в текущем checkout нет, поэтому новые accuracy-метрики по ним не рассчитаны. Предыдущая запись о 22 документах сохраняется как исторический benchmark, а не как воспроизводимый текущий прогон.
+
+Локальный OCR пробник на скане КФЗ чувствителен к режиму сегментации: 4× PSM 11/12 распознал коды статей и человеко-месяцы, но не выделил строку 2026 года. Это не выход OCR Document Parser; его фактическую ошибку по этой паре нельзя подтвердить без соответствующего Parser JSON. Вердикт: `READY_WITH_LIMITATIONS` для пилотного перехода с обязательной ручной проверкой `review`; полный корпус не аттестован.

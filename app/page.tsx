@@ -232,7 +232,15 @@ export default function Home() {
   const comparisonValue = (item: any, method: "rules" | "llm") => {
     const value = item[method];
     if (!value) return "—";
-    if (value.source_value !== undefined) return value.source_value ?? (value.value == null ? "—" : formatValue(value.value));
+    if (value.source_value !== undefined) {
+      if (value.status === "missing") return "Не найдено";
+      if (value.status === "review") {
+        const candidate = value.value == null ? "значение не выбрано" : formatValue(value.value);
+        return `На проверку: ${candidate}${value.source_value == null ? "" : ` · источник: ${value.source_value}`}`;
+      }
+      const shown = value.value == null ? value.source_value ?? "Значение не подтверждено" : formatValue(value.value);
+      return shown;
+    }
     return [value.identifier?.source_value, value.description?.source_value, value.amount?.source_value].filter(Boolean).join(" · ") || "Строка найдена";
   };
 

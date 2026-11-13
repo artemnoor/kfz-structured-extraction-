@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { adaptDocumentParserResult } from "../lib/parser/document-parser-adapter.mjs";
 import { classifyDocument, extractStructuredDocument } from "../lib/extraction/structured-extraction.mjs";
 
@@ -249,4 +250,20 @@ test("document headings and keyed table rows yield grounded values without broad
   assert.deepEqual(payroll.fields.reporting_period.value, { start: "2026-01-01", end: "2026-01-31" });
   assert.equal(payroll.fields.reporting_period.provenance.sheet_name, "Ведомость");
   assert.equal(payroll.fields.reporting_period.provenance.cell_address, "A3");
+});
+
+test("XLSX formulas without cached values stay review/null at the original cell address", () => {
+  const parsed = JSON.parse(readFileSync(new URL("./fixtures/document-parser-native-xlsx.analysis.json", import.meta.url), "utf8"));
+  const formulaCell = parsed.parts.find((part) => part.kind === "cell" && part.coordinate === "C8");
+  assert.ok(formulaCell?.formula);
+  assert.equal(formulaCell.cached_value, null);
+  assert.equal(formulaCell.calculation_status, "missing_cached_result");
+
+  const result = extractStructuredDocument(parsed, { mode: "rules_only" });
+  const rows = result.tables.flatMap((table) => table.rows);
+  const formulaAmount = rows.map((row) => row.amount).find((amount) => amount?.provenance?.cell_address === "C8");
+  assert.ok(formulaAmount, "formula must keep its exact XLSX cell provenance");
+  assert.equal(formulaAmount.status, "review");
+  assert.equal(formulaAmount.value, null, "a missing cached result must not become a guessed amount");
+  assert.equal(formulaAmount.provenance.sheet_name, "Ведомость");
 });

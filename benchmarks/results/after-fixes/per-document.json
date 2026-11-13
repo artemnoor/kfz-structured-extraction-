@@ -478,5 +478,52 @@
       "correct": 25,
       "support": 25
     }
+  },
+  "audit_scope": {
+    "record_status": "historical_22_document_benchmark_snapshot; no longer reproducible from parser JSON files currently present in checkout",
+    "available_parser_json_files": 6,
+    "available_files_are_demo": true,
+    "independently_scored_originals": 5,
+    "source_inventory_files": 26,
+    "source_inventory_formats": {
+      "pdf": 10,
+      "xlsx": 11,
+      "docx": 3,
+      "png": 1,
+      "txt": 1
+    },
+    "additional_original_accuracy_scored": false,
+    "reason": "Additional originals have no aligned Parser JSON and Structured Extraction output in the current checkout."
+  },
+  "xlsx_formula_audit": {
+    "original_workbooks_with_uncached_formula": 5,
+    "formula_cells": 5,
+    "source_address": "C8",
+    "direct_extraction_outputs_available": false,
+    "regression_result": "PASS review/null and exact cell provenance"
+  },
+  "ocr_audit": {
+    "visually_reviewed_scanned_pdf_pages": 4,
+    "production_parser_ocr_output_available": false,
+    "local_reference_probe_detected_article_codes": 5,
+    "article_codes_checked": 5,
+    "unit_person_months_detected": true,
+    "target_kfz_2026_row_detected": false,
+    "probe_engine": "local Tesseract; not Document Parser"
+  },
+  "browser_acceptance": {
+    "status": "PASS",
+    "selected_documents": 2,
+    "modes_checked": [
+      "rules_only",
+      "llm_assisted",
+      "compare"
+    ],
+    "compare_conflicts_open_source_and_highlighted": true
+  },
+  "readiness": {
+    "verdict": "READY_WITH_LIMITATIONS",
+    "full_corpus_accuracy": "not_scored",
+    "document_linking_started": false
   }
 }

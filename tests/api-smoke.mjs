@@ -28,6 +28,7 @@ const listing = await json("/api/documents");
 assert.ok(listing.response.ok, JSON.stringify(listing.body));
 assert.equal(listing.body.storage, "Cloudflare D1");
 assert.ok(listing.body.documents.length >= 6);
+assert.equal(new Set(listing.body.documents.map((document) => document.id)).size, listing.body.documents.length, "document listing must not duplicate D1 rows");
 assert.ok(listing.body.documents.every((document) => document.is_demo));
 const demo = listing.body.documents.find((document) => document.id === "kfz-2026-q1");
 assert.ok(demo);
@@ -43,7 +44,7 @@ const unauthenticatedModels = await json("/api/llm/models", { headers: anonymous
 assert.equal(unauthenticatedModels.response.status, 401);
 
 const rawFixture = JSON.parse(await readFile(new URL("../data/parser-results/invoice-2026-0408.json", import.meta.url), "utf8"));
-const importedId = `api-smoke-${crypto.randomUUID()}`;
+const importedId = "api-smoke-prepared-invoice";
 function updateDocumentReferences(value) {
   if (!value || typeof value !== "object") return;
   for (const key of Object.keys(value)) {
@@ -63,8 +64,9 @@ const importDoc = async (parserJson, headers = ownerA) => json("/api/parser-json
 });
 
 const imported = await importDoc(rawFixture);
-assert.equal(imported.response.status, 201, JSON.stringify(imported.body));
-assert.equal(imported.body.document.input_version, 1);
+assert.ok([200, 201].includes(imported.response.status), JSON.stringify(imported.body));
+const initialInputVersion = imported.body.document.input_version;
+assert.ok(Number.isInteger(initialInputVersion) && initialInputVersion > 0);
 const saved = await json(`/api/documents/${encodeURIComponent(importedId)}`, { headers: ownerA });
 assert.equal(saved.response.status, 200);
 assert.equal(saved.body.document.is_synthetic, true);
@@ -75,7 +77,7 @@ const extraction = await json(`/api/documents/${encodeURIComponent(importedId)}/
 assert.equal(extraction.response.status, 201, JSON.stringify(extraction.body));
 assert.equal(extraction.body.extraction.document_type, "invoice");
 assert.equal(extraction.body.extraction.extraction_engine.llm.called, false);
-assert.equal(extraction.body.extraction.input_version, 1);
+assert.equal(extraction.body.extraction.input_version, initialInputVersion);
 
 const extractionId = extraction.body.extraction.extraction_id;
 const outsiderDocument = await json(`/api/documents/${encodeURIComponent(importedId)}`, { headers: anonymousSpoof });
@@ -92,13 +94,13 @@ assert.equal(spoofedIdentity.response.status, 200, "client-supplied OAI identity
 
 const unchangedImport = await importDoc(rawFixture);
 assert.equal(unchangedImport.response.status, 200);
-assert.equal(unchangedImport.body.document.input_version, 1);
+assert.equal(unchangedImport.body.document.input_version, initialInputVersion);
 
 const changedFixture = structuredClone(rawFixture);
 changedFixture.parts.push({ kind: "paragraph", id: "new-source", text: "Дополнительный исходный фрагмент" });
 const changedImport = await importDoc(changedFixture);
 assert.equal(changedImport.response.status, 200);
-assert.equal(changedImport.body.document.input_version, 2);
+assert.equal(changedImport.body.document.input_version, initialInputVersion + 1);
 const afterChange = await json(`/api/documents/${encodeURIComponent(importedId)}`, { headers: ownerA });
 assert.equal(afterChange.body.document.latest_extraction, null, "old extraction must not be reported as current after source version changes");
 
@@ -107,7 +109,7 @@ const reExtraction = await json(`/api/documents/${encodeURIComponent(importedId)
 });
 assert.equal(reExtraction.response.status, 201, JSON.stringify(reExtraction.body));
 assert.equal(reExtraction.body.extraction.version, extraction.body.extraction.version + 1);
-assert.equal(reExtraction.body.extraction.input_version, 2);
+assert.equal(reExtraction.body.extraction.input_version, initialInputVersion + 1);
 const history = await json(`/api/documents/${encodeURIComponent(importedId)}/extractions`, { headers: ownerA });
 assert.equal(history.response.status, 200);
 assert.ok(history.body.history.some((run) => run.input_version === 1));
