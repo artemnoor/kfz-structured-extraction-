@@ -58,6 +58,56 @@ test("KFS-like target row keeps all 15 checked numeric cells and marks incomplet
   assert.ok(result.review_required.some((item) => item.path === `tables.kfz-target.rows.${table.empty_rows[0].row_id}`));
 });
 
+test("KFS 15-cell semantics preserve hierarchical headings, units, and exact source columns", () => {
+  const headers = [
+    ["Этап", "Месяц", "Трудоемкость", "Материальные затраты", "Затраты на оплату труда — всего (0200)", "Затраты на оплату труда — всего (0200)", "Затраты на оплату труда — всего (0200)", "Затраты на оплату труда — всего (0200)", "Затраты на оплату труда — всего (0200)", "Страховые взносы — всего (0300)", "Страховые взносы — всего (0300)", "Страховые взносы — всего (0300)", "Страховые взносы — всего (0300)", "Страховые взносы — всего (0300)", "Общепроизводственные затраты (0800)", "Общехозяйственные затраты (0900)", "Итого"],
+    ["", "", "", "", "Всего по статье 0200", "В том числе", "", "", "Резерв отпусков", "Всего по статье 0300", "В том числе", "", "", "Резерв отпусков", "", "", ""],
+    ["", "", "", "", "", "Счет 211 — всего", "Счет 211 — основная заработная плата", "Счет 211 — дополнительная заработная плата", "Счет 211 — резерв отпусков, заработная плата", "", "Счет 213 — всего", "Счет 213 — основная заработная плата", "Счет 213 — дополнительная заработная плата", "Счет 213 — резерв отпусков, взносы с резерва", "", "", ""],
+    ["", "", "человеко-месяц", "руб.", "руб.", "руб.", "руб.", "руб.", "руб.", "руб.", "руб.", "руб.", "руб.", "руб.", "руб.", "руб.", "руб."],
+  ];
+  const values = ["3 этап, 2026 г.", "", "10,25", "101,00", "102,00", "103,00", "104,00", "105,00", "106,00", "107,00", "108,00", "109,00", "110,00", "111,00", "112,00", "113,00", "114,00"];
+  const parsed = {
+    document_id: "kfz-semantic-columns",
+    markdown: "Карточка учета фактических затрат",
+    logical_tables: [{ id: "kfz-semantic", caption: "Показатели", headers, rows: [{ page_no: 1, source_row_index: 7, values, provenance: [{ page_no: 1, source_ref: "#/logical_tables/0/rows/0" }] }] }],
+  };
+  const view = adaptDocumentParserResult(parsed);
+  const result = extractStructuredDocument(parsed, { mode: "rules_only" });
+  const row = result.tables[0].rows[0];
+  const expected = [
+    [/трудоемкость/i, /человеко-месяц/i], [/материальные затраты/i, /руб\./i],
+    [/оплату труда.*0200/i, /всего по статье 0200/i, /руб\./i],
+    [/оплату труда.*0200/i, /счет 211.*всего/i, /руб\./i],
+    [/оплату труда.*0200/i, /счет 211.*основная заработная плата/i, /руб\./i],
+    [/оплату труда.*0200/i, /счет 211.*дополнительная заработная плата/i, /руб\./i],
+    [/оплату труда.*0200/i, /резерв отпусков.*заработная плата/i, /руб\./i],
+    [/страховые взносы.*0300/i, /всего по статье 0300/i, /руб\./i],
+    [/страховые взносы.*0300/i, /счет 213.*всего/i, /руб\./i],
+    [/страховые взносы.*0300/i, /счет 213.*основная заработная плата/i, /руб\./i],
+    [/страховые взносы.*0300/i, /счет 213.*дополнительная заработная плата/i, /руб\./i],
+    [/страховые взносы.*0300/i, /резерв отпусков.*взносы с резерва/i, /руб\./i],
+    [/общепроизводственные затраты.*0800/i, /руб\./i],
+    [/общехозяйственные затраты.*0900/i, /руб\./i],
+    [/итого/i, /руб\./i],
+  ];
+  assert.equal(view.tables[0].headers.length, 17);
+  assert.equal(row.source_cells.length, 17);
+  assert.equal(row.source_cells[0].extracted.source_value, values[0]);
+  for (const [offset, patterns] of expected.entries()) {
+    const column = offset + 2;
+    const header = view.tables[0].headers[column];
+    const cell = row.source_cells[column];
+    assert.ok(patterns.every((pattern) => pattern.test(header)), `source column ${column + 1} must mean ${patterns.map(String).join(" + ")}: ${header}`);
+    assert.equal(cell.extracted.source_value, values[column], `source value must stay in column ${column + 1}`);
+    assert.equal(cell.extracted.provenance.column_index, column);
+    assert.equal(cell.extracted.provenance.row_id, row.row_id);
+    assert.match(cell.extracted.provenance.source_ref, new RegExp(`/values/${column}$`));
+  }
+  assert.equal(row.source_cells[4].extracted.source_value, values[4], "overall 0200 must not be swapped with its account-211 breakdown");
+  assert.equal(row.source_cells[9].extracted.source_value, values[9], "overall 0300 must not be swapped with its account-213 breakdown");
+  assert.equal(row.row_status, "review", "the absent month is incomplete, not a fully extracted row");
+});
+
 test("authentic logical-table fragment shape merges headers, removes mirrored rows and grounds all target values", () => {
   const width = 17;
   const grid = [
@@ -115,4 +165,88 @@ test("supported document classes use body signals when filenames are removed", (
   }
   const unknown = { document_id: "unknown", file_name: "invoice.pdf", parts: [{ kind: "paragraph", text: "Общие условия, без признаков типа" }] };
   assert.equal(classifyDocument(unknown).type, "unknown", "filename is not a classification signal");
+});
+
+test("a generic customer label cannot populate representative or remarks fields", () => {
+  const parsed = {
+    document_id: "act-no-signatory-data",
+    parts: [
+      { kind: "paragraph", text: "Акт оказанных услуг № A-17 от 28.01.2026" },
+      { kind: "paragraph", text: "Исполнитель: ООО Альфа" },
+      { kind: "paragraph", text: "Заказчик: ООО Бета" },
+      { kind: "paragraph", text: "Основание: договор Д-42" },
+    ],
+  };
+  const result = extractStructuredDocument(parsed, { mode: "rules_only" });
+  assert.equal(result.fields.customer.value, "ООО Бета");
+  assert.equal(result.fields.customer_representative.status, "missing");
+  assert.equal(result.fields.customer_representative.value, null);
+  assert.equal(result.fields.customer_remarks.status, "missing");
+  assert.equal(result.fields.customer_remarks.value, null);
+});
+
+test("document headings and keyed table rows yield grounded values without broad label matches", () => {
+  const scannedAct = {
+    document_id: "scan-act-heading",
+    parts: [
+      { kind: "text", text: "AKT N 118 OT 28.01.2026", provenance: [{ page_no: 1, source_ref: "#/parts/0", source_text: "AKT N 118 OT 28.01.2026" }] },
+      { kind: "paragraph", text: "Основание: договор 24/03/15-01, этап 3.", provenance: [{ page_no: 1, source_ref: "#/parts/1", source_text: "Основание: договор 24/03/15-01, этап 3." }] },
+      { kind: "paragraph", text: "Исполнитель: ООО Альфа", provenance: [{ page_no: 1, source_ref: "#/parts/2", source_text: "Исполнитель: ООО Альфа" }] },
+      { kind: "paragraph", text: "Заказчик: ООО Бета", provenance: [{ page_no: 1, source_ref: "#/parts/3", source_text: "Заказчик: ООО Бета" }] },
+      { kind: "paragraph", text: "Стоимость оказанных услуг: 245 000,00 руб.", provenance: [{ page_no: 1, source_ref: "#/parts/4", source_text: "Стоимость оказанных услуг: 245 000,00 руб." }] },
+    ],
+  };
+  const act = extractStructuredDocument(scannedAct, { mode: "rules_only" });
+  assert.equal(act.document_type, "act");
+  assert.equal(act.fields.act_number.value, "118");
+  assert.equal(act.fields.act_date.value, "2026-01-28");
+  assert.deepEqual(act.fields.amount_due.value, { amount: "245000.00", currency: "RUB" });
+  assert.equal(act.fields.customer_representative.status, "missing");
+  assert.equal(act.fields.customer_remarks.status, "missing");
+  for (const key of ["act_number", "act_date", "amount_due"]) {
+    assert.ok(act.fields[key].provenance?.source_ref);
+    assert.ok(act.fields[key].provenance.source_text.includes(act.fields[key].source_value));
+  }
+
+  const invoiceAct = {
+    document_id: "digital-invoice-act",
+    parts: [
+      { kind: "paragraph", text: "СЧЕТ-АКТ № 174" },
+      { kind: "paragraph", text: "К оплате по документу: 318 298,10 руб." },
+    ],
+    logical_tables: [{ id: "document-fields", role: "table", headers: ["Дата", "25.02.2026"], rows: [
+      { page_no: 1, source_row_index: 1, values: ["Дата", "25.02.2026"] },
+      { page_no: 1, source_row_index: 2, values: ["Исполнитель", "ООО ИнжКонтур"] },
+      { page_no: 1, source_row_index: 3, values: ["Получатель", "ООО Заказчик"] },
+    ] }],
+  };
+  const invoice = extractStructuredDocument(invoiceAct, { mode: "rules_only" });
+  assert.equal(invoice.document_type, "invoice_act");
+  assert.equal(invoice.fields.document_number.value, "174");
+  assert.equal(invoice.fields.document_date.value, "2026-02-25");
+  assert.equal(invoice.fields.supplier.value, "ООО ИнжКонтур");
+  assert.equal(invoice.fields.customer.value, "ООО Заказчик");
+  assert.deepEqual(invoice.fields.total_amount.value, { amount: "318298.10", currency: "RUB" });
+  assert.ok(Object.values(invoice.fields).filter((field) => field.status === "extracted").every((field) => field.provenance?.source_ref && field.provenance.source_text.includes(field.source_value)));
+
+  const memo = extractStructuredDocument({
+    document_id: "memo-title-number",
+    parts: [{ kind: "paragraph", text: "Служебная записка КЛ-31" }, { kind: "paragraph", text: "Дата: 10.04.2026" }],
+  }, { mode: "rules_only" });
+  assert.equal(memo.fields.memo_number.value, "КЛ-31");
+  assert.equal(memo.fields.memo_date.value, "2026-04-10");
+
+  const payroll = extractStructuredDocument({
+    document_id: "payroll-period-cell",
+    source_extension: ".xlsx",
+    markdown: "РАСЧЕТНАЯ ВЕДОМОСТЬ ПО ОПЛАТЕ ТРУДА",
+    parts: [
+      { kind: "sheet", name: "Ведомость" },
+      { kind: "cell", sheet: "Ведомость", coordinate: "A3", row: 3, column: 1, value: "Проект: D-42 | Период: Январь 2026", display_value: "Проект: D-42 | Период: Январь 2026" },
+    ],
+  }, { mode: "rules_only" });
+  assert.equal(payroll.document_type, "payroll_register");
+  assert.deepEqual(payroll.fields.reporting_period.value, { start: "2026-01-01", end: "2026-01-31" });
+  assert.equal(payroll.fields.reporting_period.provenance.sheet_name, "Ведомость");
+  assert.equal(payroll.fields.reporting_period.provenance.cell_address, "A3");
 });

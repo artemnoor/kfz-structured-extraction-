@@ -76,11 +76,11 @@ test("Polza models endpoint requests the model catalog without exposing the API 
     POLZA_API_KEY: "unit-test-key",
     POLZA_FETCH: async (url, init) => {
       request = { url, method: init.method, authorization: init.headers.authorization };
-      return new Response(JSON.stringify({ data: [{ id: "deepseek/deepseek-v4-flash" }] }), { status: 200 });
+      return new Response(JSON.stringify({ data: [{ id: "google/gemma-4-26b-a4b-it" }] }), { status: 200 });
     },
   });
   assert.deepEqual(request, { url: "https://polza.ai/api/v1/models", method: "GET", authorization: "Bearer unit-test-key" });
-  assert.equal(models[0].id, "deepseek/deepseek-v4-flash");
+  assert.equal(models[0].id, "google/gemma-4-26b-a4b-it");
 });
 
 test("unavailable source text stays out of Polza context and cannot ground an extracted value", async () => {

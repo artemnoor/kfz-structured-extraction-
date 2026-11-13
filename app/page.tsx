@@ -324,7 +324,7 @@ export default function Home() {
             <div className="mode-options" role="radiogroup" aria-label="Режим Structured Extraction">
               {(["rules_only", "llm_assisted", "compare"] as const).map((value) => <button key={value} role="radio" aria-checked={extractionMode === value} className={extractionMode === value ? "selected" : ""} onClick={() => setExtractionMode(value)}><strong>{modeLabels[value]}</strong><small>{value === "rules_only" ? "Только детерминированные правила" : value === "llm_assisted" ? "Правила + подтверждённые ответы LLM" : "Одинаковый JSON в обоих режимах"}</small></button>)}
             </div>
-            <div className="mode-footnote"><span>Модель: {llmReadiness?.model ?? "deepseek/deepseek-v4-flash"}</span><span>{extractionMode !== "rules_only" && !llmAllowed ? "Для импортированного документа LLM отключена: требуется отметить данные синтетическими/обезличенными при импорте." : llmReadiness?.configured ? `Провайдер: ${llmReadiness.provider}` : "Rules Only работает без LLM. Для LLM нужен серверный секрет POLZA_API_KEY."}</span></div>
+            <div className="mode-footnote"><span>Модель: {llmReadiness?.model ?? "google/gemma-4-26b-a4b-it"}</span><span>{extractionMode !== "rules_only" && !llmAllowed ? "Для импортированного документа LLM отключена: требуется отметить данные синтетическими/обезличенными при импорте." : llmReadiness?.configured ? `Провайдер: ${llmReadiness.provider}` : "Rules Only работает без LLM. Для LLM нужен серверный секрет POLZA_API_KEY."}</span></div>
             {!userAuthenticated && <div className="auth-note">Запуск и сохранение результата требуют входа через ChatGPT. <a href="/signin-with-chatgpt?return_to=%2F">Войти</a></div>}
           </section>}
 
